@@ -1,14 +1,28 @@
 {
-  "id": "githubHeatmap",
-  "name": "GitHub Heatmap",
-  "description": "Display weekly GitHub contribution heatmap with color-coded activity levels",
+  "id": "githubHeatmapRevive",
+  "name": "GitHub Heatmap Revive",
+  "description": "Display GitHub contribution heatmap with color-coded activity levels",
+  "category": "utilities",
   "version": "1.0.0",
-  "author": "Deppes",
+  "author": "JDKamalakar",
   "icon": "code",
   "type": "widget",
-  "firstParty": false,
   "component": "./HeatMapWidget.qml",
   "settings": "./HeatMapSettings.qml",
+  "capabilities": [
+    "dankbar-widget"
+  ],
+  "repo": "https://github.com/JDKamalakar/DMS-GitHub_HeatMap",
+  "compositors": [
+    "any"
+  ],
+  "distro": [
+    "any"
+  ],
+  "dependencies": [
+    "dms"
+  ],
+  "screenshot": "https://raw.githubusercontent.com/JDKamalakar/DMS-GitHub_HeatMap/refs/heads/main/assets/POP-Up_UI.png",
   "permissions": [
     "settings_read",
     "settings_write",

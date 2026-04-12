@@ -7,7 +7,7 @@ import qs.Services
 
 PluginSettings {
     id: root
-    pluginId: "githubHeatmap"
+    pluginId: "githubHeatmapRevive"
 
     PluginGlobalVar {
         id: usernameSetting
@@ -54,140 +54,142 @@ PluginSettings {
             }
 
             StyledText {
-                text: "Display your weekly GitHub contribution activity in your status bar"
+                text: "Visualize your GitHub contribution activity. This plugin fetches public data from your profile."
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.surfaceVariantText
                 wrapMode: Text.WordWrap
             }
         }
 
-        // GitHub Username
-        StyledRect {
+        // --- Account Section ---
+        Rectangle {
             width: parent.width
-            height: usernameColumn.implicitHeight + Theme.spacingL * 2
-            color: Theme.surfaceContainerHigh
+            height: accountGroup.implicitHeight + Theme.spacingM * 2
+            color: Theme.surfaceContainer
             radius: Theme.cornerRadius
+            border.color: Theme.outline
+            border.width: 1
 
             Column {
-                id: usernameColumn
+                id: accountGroup
                 anchors.fill: parent
-                anchors.margins: Theme.spacingL
+                anchors.margins: Theme.spacingM
                 spacing: Theme.spacingM
 
                 Row {
-                    spacing: Theme.spacingS
-
-                    DankIcon {
-                        name: "person"
-                        size: Theme.iconSize
-                        color: Theme.primary
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-
-                    StyledText {
-                        text: "GitHub Username"
-                        font.weight: Font.Bold
-                        font.pixelSize: Theme.fontSizeMedium
-                        color: Theme.surfaceText
-                        anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width
+                    spacing: Theme.spacingM
+                    DankIcon { name: "person"; size: 22; anchors.verticalCenter: parent.verticalCenter; opacity: 0.8 }
+                    Column {
+                        width: parent.width - 22 - Theme.spacingM
+                        spacing: Theme.spacingXXS
+                        StyledText {
+                            text: "GitHub Identity"
+                            font.pixelSize: Theme.fontSizeMedium
+                            font.weight: Font.Medium
+                            color: Theme.surfaceText
+                        }
+                        StyledText {
+                            text: "Your GitHub username used to fetch public contribution data."
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.surfaceVariantText
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                        }
                     }
                 }
 
                 DankTextField {
                     id: usernameField
-                    width: parent.width - Theme.spacingL * 2
-                    placeholderText: "your-github-username"
+                    width: parent.width
+                    placeholderText: "e.g. josh-overton"
                     text: ""
-                }
-
-                StyledText {
-                    text: "Your GitHub username (public profile)"
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: Theme.surfaceVariantText
+                    onTextChanged: if (activeFocus) Qt.callLater(() => {
+                        // Optional real-time feedback
+                    })
                 }
             }
         }
 
-        // Refresh Interval
-        StyledRect {
+        // --- Performance Section ---
+        Rectangle {
             width: parent.width
-            height: intervalColumn.implicitHeight + Theme.spacingL * 2
-            color: Theme.surfaceContainerHigh
+            height: perfGroup.implicitHeight + Theme.spacingM * 2
+            color: Theme.surfaceContainer
             radius: Theme.cornerRadius
+            border.color: Theme.outline
+            border.width: 1
 
             Column {
-                id: intervalColumn
+                id: perfGroup
                 anchors.fill: parent
-                anchors.margins: Theme.spacingL
+                anchors.margins: Theme.spacingM
                 spacing: Theme.spacingM
 
                 Row {
-                    spacing: Theme.spacingS
-
-                    DankIcon {
-                        name: "schedule"
-                        size: Theme.iconSize
-                        color: Theme.primary
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-
-                    StyledText {
-                        text: "Refresh Interval"
-                        font.weight: Font.Bold
-                        font.pixelSize: Theme.fontSizeMedium
-                        color: Theme.surfaceText
-                        anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width
+                    spacing: Theme.spacingM
+                    DankIcon { name: "schedule"; size: 22; anchors.verticalCenter: parent.verticalCenter; opacity: 0.8 }
+                    Column {
+                        width: parent.width - 22 - Theme.spacingM
+                        spacing: Theme.spacingXXS
+                        StyledText {
+                            text: "Refresh Rate"
+                            font.pixelSize: Theme.fontSizeMedium
+                            font.weight: Font.Medium
+                            color: Theme.surfaceText
+                        }
+                        StyledText {
+                            text: "Frequency of updates in seconds. Higher values save battery."
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.surfaceVariantText
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                        }
                     }
                 }
 
                 DankTextField {
                     id: intervalField
-                    width: parent.width - Theme.spacingL * 2
-                    placeholderText: "300"
+                    width: parent.width
+                    placeholderText: "300 (5 minutes)"
                     text: "300"
-                    validator: IntValidator { bottom: 60 }
-                }
-
-                StyledText {
-                    text: "Refresh interval in seconds (minimum: 60)"
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: Theme.surfaceVariantText
-                    wrapMode: Text.WordWrap
+                    validator: IntValidator { bottom: 60; top: 86400 }
                 }
             }
         }
 
-        // Save Button
+        // --- Save Action ---
         DankButton {
             width: parent.width
-            text: "Save Settings"
-            iconName: "check"
+            text: "Save & Synchronize"
+            iconName: "published_with_changes"
+            
+            scale: pressed ? 0.98 : 1.0
+            Behavior on scale { NumberAnimation { duration: 100 } }
 
             onClicked: {
-                // Validation
-                if (!usernameField.text.trim()) {
-                    ToastService.showError("GitHub username is required")
+                const name = usernameField.text.trim()
+                if (!name) {
+                    ToastService.showError("Please enter a GitHub username")
                     return
                 }
 
-                var interval = parseInt(intervalField.text) || 300
+                const interval = parseInt(intervalField.text) || 300
                 if (interval < 60) {
-                    ToastService.showError("Refresh interval must be at least 60 seconds")
+                    ToastService.showError("Interval must be at least 60 seconds")
                     return
                 }
 
-                // Save all settings using PluginService.savePluginData (persists to disk)
-                PluginService.savePluginData("githubHeatmap", "username", usernameField.text.trim())
-                PluginService.savePluginData("githubHeatmap", "refreshInterval", interval)
+                // Persist
+                PluginService.savePluginData("githubHeatmapRevive", "username", name)
+                PluginService.savePluginData("githubHeatmapRevive", "refreshInterval", interval)
 
-                // Also set in memory for immediate effect
-                PluginService.setGlobalVar("githubHeatmap", "username", usernameField.text.trim())
-                PluginService.setGlobalVar("githubHeatmap", "refreshInterval", interval)
+                // Notify Memory
+                PluginService.setGlobalVar("githubHeatmapRevive", "username", name)
+                PluginService.setGlobalVar("githubHeatmapRevive", "refreshInterval", interval)
 
-                console.log("GitHub Heatmap: Settings saved - username:", usernameField.text.trim())
-
-                // Success feedback
-                ToastService.showSuccess("Settings saved successfully!")
+                ToastService.showSuccess("Settings updated successfully")
             }
         }
     }

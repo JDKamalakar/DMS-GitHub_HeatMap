@@ -10,8 +10,8 @@ PluginComponent {
     id: root
 
     // Popout dimensions
-    popoutWidth: 280
-    popoutHeight: 340
+    popoutWidth: 320
+    popoutHeight: 380
 
     // Icons
     readonly property string iconBar: "commit"
@@ -23,6 +23,8 @@ PluginComponent {
     // Settings from pluginData
     property string githubUsername: (pluginData && pluginData.username) ? pluginData.username : ""
     property int refreshInterval: (pluginData && pluginData.refreshInterval) ? pluginData.refreshInterval : 300
+    property string faGithubGlyph: "\uf09b"
+    property string faFamily: "Font Awesome 6 Brands, Font Awesome 5 Brands, Font Awesome 6 Free, Font Awesome 5 Free"
 
     // State - Always 7 items for fixed width
     property var contributions: []
@@ -507,10 +509,10 @@ exit 0
     property int popoutY: (pluginData && pluginData.popoutY) ? pluginData.popoutY : -1
 
     function savePopoutPosition(x, y) {
-        PluginService.savePluginData("githubHeatmap", "popoutX", x)
-        PluginService.savePluginData("githubHeatmap", "popoutY", y)
-        PluginService.setGlobalVar("githubHeatmap", "popoutX", x)
-        PluginService.setGlobalVar("githubHeatmap", "popoutY", y)
+        PluginService.savePluginData("githubHeatmapRevive", "popoutX", x)
+        PluginService.savePluginData("githubHeatmapRevive", "popoutY", y)
+        PluginService.setGlobalVar("githubHeatmapRevive", "popoutX", x)
+        PluginService.setGlobalVar("githubHeatmapRevive", "popoutY", y)
     }
 
     // Popout content
@@ -526,37 +528,153 @@ exit 0
             onXChanged: if (visible) Qt.callLater(() => root.savePopoutPosition(x, y))
             onYChanged: if (visible) Qt.callLater(() => root.savePopoutPosition(x, y))
 
-            headerText: "GitHub Contributions"
-            detailsText: {
-                if (root.isError) return root.errorMessage
-                if (root.isLoading) return "Loading..."
-                return root.totalContributions + " contributions (8 weeks)"
-            }
             showCloseButton: false
+            headerText: "" // We will use our own custom header inside
 
             Column {
                 width: parent.width
                 spacing: Theme.spacingM
+                topPadding: Theme.spacingM
+                bottomPadding: Theme.spacingM
 
-                // Action buttons row
-                Row {
-                    anchors.right: parent.right
-                    spacing: Theme.spacingS
+                // Header card
+                Item {
+                    width: parent.width
+                    height: 68
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Theme.cornerRadius * 1.5
+                        gradient: Gradient {
+                            GradientStop {
+                                position: 0.0
+                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                            }
+                            GradientStop {
+                                position: 1.0
+                                // Safely handle missing Theme.secondary
+                                property color secondaryColor: Theme.secondary || Theme.primary
+                                color: Qt.rgba(secondaryColor.r, secondaryColor.g, secondaryColor.b, 0.08)
+                            }
+                        }
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25)
+                    }
+
+                    Row {
+                        anchors.left: parent.left
+                        anchors.leftMargin: Theme.spacingM
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: Theme.spacingM
+
+                        Item {
+                            width: 40
+                            height: 40
+                            anchors.verticalCenter: parent.verticalCenter
+                            scale: profileArea.pressed ? 0.9 : (profileArea.containsMouse ? 1.1 : 1.0)
+                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+
+                            MouseArea {
+                                id: profileArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onPressed: mouse => profileRipple.trigger(mouse.x, mouse.y)
+                                onClicked: if (root.githubUsername) openProfileProcess.running = true
+                            }
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 20
+                                color: profileArea.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.3) : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2)
+                            }
+
+                            StyledText {
+                                text: root.faGithubGlyph
+                                font.family: root.faFamily
+                                font.pixelSize: 22
+                                color: Theme.primary
+                                anchors.centerIn: parent
+                                scale: profileArea.containsMouse ? 1.2 : 1.0
+                                Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
+                            }
+
+                            DankRipple {
+                                id: profileRipple
+                                rippleColor: Theme.surfaceText
+                                cornerRadius: 20
+                                anchors.fill: parent
+                            }
+                        }
+
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+
+                            StyledText {
+                                text: root.githubUsername || "GitHub User"
+                                font.bold: true
+                                font.pixelSize: Theme.fontSizeLarge
+                                color: Theme.surfaceText
+                            }
+
+                            StyledText {
+                                text: root.isError ? "Connection Error" : (root.isLoading ? "Syncing..." : root.totalContributions + " contributions")
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: Theme.surfaceVariantText
+                            }
+                        }
+                    }
 
                     // Refresh button
-                    Rectangle {
-                        width: Theme.iconSize * 1.5
-                        height: Theme.iconSize * 1.5
-                        radius: Theme.iconSize * 0.75
-                        color: refreshArea.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
+                    Item {
+                        width: 38
+                        height: 38
+                        anchors.right: parent.right
+                        anchors.rightMargin: Theme.spacingM
+                        anchors.verticalCenter: parent.verticalCenter
+                        scale: refreshArea.pressed ? 0.9 : (refreshArea.containsMouse ? 1.1 : 1.0)
+                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+
+                        MouseArea {
+                            id: refreshArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onPressed: mouse => refreshRipple.trigger(mouse.x, mouse.y)
+                            onClicked: {
+                                root.isManualRefresh = true
+                                root.refreshHeatmap()
+                            }
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: Theme.cornerRadius
+                            color: refreshArea.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.4)
+                            border.width: 1
+                            border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, refreshArea.containsMouse ? 0.3 : 0.15)
+                            Behavior on color { ColorAnimation { duration: 150 } }
+                            Behavior on border.color { ColorAnimation { duration: 150 } }
+                        }
 
                         DankIcon {
-                            anchors.centerIn: parent
+                            id: refreshIcon
                             name: root.iconRefresh
-                            size: Theme.iconSize * 0.8
-                            color: refreshArea.containsMouse ? Theme.primary : Theme.surfaceText
+                            size: 20
+                            color: Theme.primary
+                            anchors.centerIn: parent
 
-                            NumberAnimation on rotation {
+                            SequentialAnimation {
+                                id: hoverSpinAnim
+                                running: refreshArea.containsMouse && !root.isLoading
+                                onStopped: refreshIcon.rotation = 0
+                                NumberAnimation { target: refreshIcon; property: "rotation"; from: 0; to: 45; duration: 200; easing.type: Easing.OutQuad }
+                                NumberAnimation { target: refreshIcon; property: "rotation"; from: 45; to: -45; duration: 400; easing.type: Easing.InOutQuad }
+                                NumberAnimation { target: refreshIcon; property: "rotation"; from: -45; to: 0; duration: 200; easing.type: Easing.InQuad }
+                            }
+
+                            RotationAnimation on rotation {
                                 from: 0
                                 to: 360
                                 duration: 1000
@@ -565,188 +683,123 @@ exit 0
                             }
                         }
 
-                        MouseArea {
-                            id: refreshArea
+                        DankRipple {
+                            id: refreshRipple
+                            rippleColor: Theme.surfaceText
+                            cornerRadius: Theme.cornerRadius
                             anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.isManualRefresh = true
-                                root.refreshHeatmap()
-                            }
                         }
                     }
+                }
 
-                    // Open profile button
-                    Rectangle {
-                        width: Theme.iconSize * 1.5
-                        height: Theme.iconSize * 1.5
-                        radius: Theme.iconSize * 0.75
-                        color: openArea.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
+                // Error display
+                StyledRect {
+                    width: parent.width
+                    height: root.isError ? 60 : 0
+                    radius: Theme.cornerRadius
+                    color: Theme.errorContainer || Theme.surfaceContainerHigh
+                    visible: root.isError
+                    clip: true
+                    Behavior on height { NumberAnimation { duration: 200 } }
 
-                        DankIcon {
-                            anchors.centerIn: parent
-                            name: root.iconOpen
-                            size: Theme.iconSize * 0.8
-                            color: openArea.containsMouse ? Theme.primary : Theme.surfaceText
-                        }
+                    StyledText {
+                        anchors.centerIn: parent
+                        width: parent.width - Theme.spacingL * 2
+                        text: root.errorMessage
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        color: Theme.onErrorContainer || Theme.error
+                        font.pixelSize: Theme.fontSizeSmall
+                    }
+                }
 
-                        MouseArea {
-                            id: openArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (root.githubUsername) {
-                                    openProfileProcess.running = true
+                // Calendar grid container
+                StyledRect {
+                    width: parent.width
+                    height: 240
+                    radius: Theme.cornerRadius * 1.5
+                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.5)
+                    border.width: 1
+                    border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.1)
+                    visible: !root.isError
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 8
+
+                        // Day labels
+                        Column {
+                            spacing: 4
+                            topPadding: 4
+
+                            Repeater {
+                                model: ["S", "M", "T", "W", "T", "F", "S"]
+                                StyledText {
+                                    text: modelData
+                                    font.pixelSize: 10
+                                    color: Theme.surfaceVariantText
+                                    width: 14
+                                    height: 26
+                                    horizontalAlignment: Text.AlignRight
+                                    verticalAlignment: Text.AlignVCenter
                                 }
                             }
                         }
-                    }
-                }
 
-                // Divider
-                Rectangle {
-                    width: parent.width
-                    height: 1
-                    color: Theme.outlineVariant
-                }
-
-                // Error state
-                StyledRect {
-                    visible: root.isError
-                    width: parent.width
-                    height: 100
-                    color: Theme.surfaceContainerHigh
-                    radius: Theme.cornerRadius
-
-                    Column {
-                        anchors.centerIn: parent
-                        spacing: Theme.spacingS
-
-                        DankIcon {
-                            name: root.iconError
-                            color: Theme.error
-                            size: Theme.iconSize * 1.5
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        }
-
-                        StyledText {
-                            text: "Failed to load contributions"
-                            color: Theme.error
-                            font.pixelSize: Theme.fontSizeSmall
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        }
-                    }
-                }
-
-                // Calendar grid view
-                Row {
-                    visible: !root.isError
-                    spacing: 6
-                    anchors.horizontalCenter: parent.horizontalCenter
-
-                    // Day labels column
-                    Column {
-                        spacing: 3
-                        topPadding: 2
-
-                        Repeater {
-                            model: ["S", "M", "T", "W", "T", "F", "S"]
-
-                            StyledText {
-                                text: modelData
-                                font.pixelSize: 10
-                                color: Theme.surfaceVariantText
-                                width: 14
-                                height: 26
-                                horizontalAlignment: Text.AlignRight
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                        }
-                    }
-
-                    // Grid of contribution squares (8 weeks × 7 days)
-                    Row {
-                        spacing: 3
-
-                        Repeater {
-                            model: root.gridData  // 8 weeks
-
-                            Column {
-                                spacing: 3
-                                required property var modelData
-                                required property int index
-
-                                Repeater {
-                                    model: modelData  // 7 days per week
-
-                                    Rectangle {
-                                        width: 26
-                                        height: 26
-                                        radius: 4
-                                        color: modelData.color || Theme.surfaceContainer
-                                        border.color: Qt.darker(color, 1.15)
-                                        border.width: 1
-
-                                        required property var modelData
-
-                                        opacity: root.isLoading ? 0.6 : 1.0
-
-                                        Behavior on opacity {
-                                            NumberAnimation { duration: 200 }
-                                        }
-
-                                        Behavior on color {
-                                            ColorAnimation { duration: 300 }
-                                        }
-
-                                        // Tooltip on hover
-                                        MouseArea {
-                                            id: cellMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                        }
-
-                                        // Tooltip popup
+                        // Grid
+                        Row {
+                            spacing: 4
+                            Repeater {
+                                model: root.gridData
+                                Column {
+                                    spacing: 4
+                                    required property var modelData
+                                    Repeater {
+                                        model: modelData
                                         Rectangle {
-                                            visible: cellMouse.containsMouse && modelData.date !== "--/--"
-                                            x: -25
-                                            y: -30
-                                            width: tooltipText.implicitWidth + 12
-                                            height: tooltipText.implicitHeight + 8
-                                            color: Theme.surfaceContainerHighest
+                                            width: 26
+                                            height: 26
                                             radius: 4
-                                            z: 100
+                                            color: modelData.color || Theme.surfaceContainer
+                                            border.color: Qt.darker(color, 1.15)
+                                            border.width: 1
+                                            required property var modelData
+                                            opacity: root.isLoading ? 0.6 : 1.0
+                                            Behavior on opacity { NumberAnimation { duration: 200 } }
+                                            Behavior on color { ColorAnimation { duration: 300 } }
 
-                                            StyledText {
-                                                id: tooltipText
-                                                anchors.centerIn: parent
-                                                text: modelData.date + ": " + modelData.count
-                                                font.pixelSize: 11
-                                                color: Theme.surfaceText
+                                            MouseArea {
+                                                id: cellMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                            }
+
+                                            // Tooltip
+                                            Rectangle {
+                                                visible: cellMouse.containsMouse && modelData.date !== "--/--"
+                                                x: -25
+                                                y: -32
+                                                width: tooltipText.implicitWidth + 12
+                                                height: tooltipText.implicitHeight + 8
+                                                color: Theme.surfaceContainerHighest
+                                                radius: 4
+                                                z: 100
+                                                border.color: Theme.outlineVariant
+                                                border.width: 1
+
+                                                StyledText {
+                                                    id: tooltipText
+                                                    anchors.centerIn: parent
+                                                    text: modelData.date + ": " + modelData.count
+                                                    font.pixelSize: 11
+                                                    color: Theme.surfaceText
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                }
-
-                // Empty state
-                StyledRect {
-                    visible: !root.isError && root.totalContributions === "0"
-                    width: parent.width
-                    height: 50
-                    color: Theme.surfaceContainerHigh
-                    radius: Theme.cornerRadius
-
-                    StyledText {
-                        anchors.centerIn: parent
-                        text: "No contributions yet"
-                        color: Theme.surfaceVariantText
-                        font.pixelSize: Theme.fontSizeSmall
                     }
                 }
             }
