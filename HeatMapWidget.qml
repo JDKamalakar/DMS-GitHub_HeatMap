@@ -112,6 +112,11 @@ PluginComponent {
                   .replace(/`/g, "\\`")
     }
 
+    function showTooltip(text, mouseArea) {
+        // DankTooltipV2 handles all coordinate mapping internally by passing the item
+        tooltip.show(text, mouseArea);
+    }
+
     // Auto-refresh timer
     Timer {
         id: refreshTimer
@@ -226,12 +231,13 @@ while read -r day_json; do
 
         weekday=$(date -d "$date" +%w)
         formatted_date=$(date -d "$date" +%m/%d)
+        tooltip_text=$(date -d "$date" "+%d / %b :: $count")
         
         weekday_names=("Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat")
         # Fix: Escape \${} to prevent JS interpolation
         weekday_name="\${weekday_names[$weekday]}"
 
-        all_days+=("$date|$weekday|$count|$color|$formatted_date|$weekday_name")
+        all_days+=("$date|$weekday|$count|$color|$formatted_date|$weekday_name|$tooltip_text")
     fi
 done <<< "$relevant_days"
 
@@ -248,7 +254,7 @@ first_day_in_week=1
 
 # Fix: Escape \${} to prevent JS interpolation
 for day_data in "\${sorted_days[@]}"; do
-    IFS='|' read -r date weekday count color formatted_date weekday_name <<< "$day_data"
+    IFS='|' read -r date weekday count color formatted_date weekday_name tooltip_text <<< "$day_data"
     
     if [ "$weekday" == "0" ] && [ "$first_day_in_week" == "0" ]; then
         current_week="$current_week]"
@@ -262,7 +268,7 @@ for day_data in "\${sorted_days[@]}"; do
         first_day_in_week=1
     fi
 
-    day_obj="{\\\"weekday\\\":$weekday,\\\"weekdayName\\\":\\\"$weekday_name\\\",\\\"date\\\":\\\"$formatted_date\\\",\\\"count\\\":$count,\\\"color\\\":\\\"$color\\\"}"
+    day_obj="{\\\"weekday\\\":$weekday,\\\"weekdayName\\\":\\\"$weekday_name\\\",\\\"date\\\":\\\"$formatted_date\\\",\\\"count\\\":$count,\\\"color\\\":\\\"$color\\\",\\\"tooltipText\\\":\\\"$tooltip_text\\\"}"
 
     if [ "$first_day_in_week" == "1" ]; then
         current_week="$current_week$day_obj"
@@ -292,12 +298,12 @@ pill_count=0
 for (( i=pill_start; i<day_count; i++ )); do
     # Fix: Escape \${} to prevent JS interpolation
     day_data="\${sorted_days[$i]}"
-    IFS='|' read -r date weekday count color formatted_date weekday_name <<< "$day_data"
+    IFS='|' read -r date weekday count color formatted_date weekday_name tooltip_text <<< "$day_data"
 
     if [ $pill_count -gt 0 ]; then
         pill_json="$pill_json,"
     fi
-    pill_json="$pill_json{\\\"weekday\\\":\\\"$weekday_name\\\",\\\"date\\\":\\\"$formatted_date\\\",\\\"count\\\":$count,\\\"color\\\":\\\"$color\\\"}"
+    pill_json="$pill_json{\\\"weekday\\\":\\\"$weekday_name\\\",\\\"date\\\":\\\"$formatted_date\\\",\\\"count\\\":$count,\\\"color\\\":\\\"$color\\\",\\\"tooltipText\\\":\\\"$tooltip_text\\\"}"
     pill_count=$((pill_count + 1))
 done
 pill_json="$pill_json]"
@@ -444,7 +450,7 @@ exit 0
             spacing: 2
 
             Repeater {
-                model: 7  // ALWAYS 7 - prevents width changes
+                model: 7
 
                 Rectangle {
                     width: 8
@@ -455,8 +461,6 @@ exit 0
                            : Theme.surfaceContainer
                     border.color: Qt.darker(color, 1.2)
                     border.width: 1
-
-                    // Subtle loading animation
                     opacity: root.isLoading ? 0.6 : 1.0
 
                     Behavior on opacity {
@@ -465,6 +469,19 @@ exit 0
 
                     Behavior on color {
                         ColorAnimation { duration: 300 }
+                    }
+
+                    MouseArea {
+                        id: pillMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onEntered: {
+                            const dayData = root.contributions[index];
+                            if (dayData && dayData.tooltipText) {
+                                root.showTooltip(dayData.tooltipText, pillMouse);
+                            }
+                        }
+                        onExited: tooltip.hide()
                     }
                 }
             }
@@ -477,7 +494,7 @@ exit 0
             spacing: 2
 
             Repeater {
-                model: 7  // ALWAYS 7 - prevents height changes
+                model: 7
 
                 Rectangle {
                     width: 16
@@ -488,8 +505,6 @@ exit 0
                            : Theme.surfaceContainer
                     border.color: Qt.darker(color, 1.2)
                     border.width: 1
-
-                    // Subtle loading animation
                     opacity: root.isLoading ? 0.6 : 1.0
 
                     Behavior on opacity {
@@ -498,6 +513,19 @@ exit 0
 
                     Behavior on color {
                         ColorAnimation { duration: 300 }
+                    }
+
+                    MouseArea {
+                        id: verticalPillMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onEntered: {
+                            const dayData = root.contributions[index];
+                            if (dayData && dayData.tooltipText) {
+                                root.showTooltip(dayData.tooltipText, verticalPillMouse);
+                            }
+                        }
+                        onExited: tooltip.hide()
                     }
                 }
             }
@@ -772,28 +800,12 @@ exit 0
                                                 id: cellMouse
                                                 anchors.fill: parent
                                                 hoverEnabled: true
-                                            }
-
-                                            // Tooltip
-                                            Rectangle {
-                                                visible: cellMouse.containsMouse && modelData.date !== "--/--"
-                                                x: -25
-                                                y: -32
-                                                width: tooltipText.implicitWidth + 12
-                                                height: tooltipText.implicitHeight + 8
-                                                color: Theme.surfaceContainerHighest
-                                                radius: 4
-                                                z: 100
-                                                border.color: Theme.outlineVariant
-                                                border.width: 1
-
-                                                StyledText {
-                                                    id: tooltipText
-                                                    anchors.centerIn: parent
-                                                    text: modelData.date + ": " + modelData.count
-                                                    font.pixelSize: 11
-                                                    color: Theme.surfaceText
+                                                onEntered: {
+                                                    if (modelData.tooltipText) {
+                                                        root.showTooltip(modelData.tooltipText, cellMouse);
+                                                    }
                                                 }
+                                                onExited: tooltip.hide()
                                             }
                                         }
                                     }
@@ -804,5 +816,10 @@ exit 0
                 }
             }
         }
+    }
+
+    // Single global tooltip instance for the plugin
+    DankTooltipV2 {
+        id: tooltip
     }
 }
