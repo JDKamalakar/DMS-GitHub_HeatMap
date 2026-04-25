@@ -219,35 +219,89 @@ PluginSettings {
         }
 
         // --- Save Action ---
-        DankButton {
+        Item {
+            id: saveBtn
             width: parent.width
-            text: "Save & Synchronize"
-            iconName: "published_with_changes"
+            height: 44
             
-            scale: pressed ? 0.98 : 1.0
-            Behavior on scale { NumberAnimation { duration: 100 } }
+            scale: saveArea.pressed ? 0.96 : (saveArea.containsMouse ? 1.02 : 1.0)
+            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
-            onClicked: {
-                const name = usernameField.text.trim()
-                if (!name) {
-                    ToastService.showError("Please enter a GitHub username")
-                    return
+            MouseArea {
+                id: saveArea
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onPressed: mouse => saveRipple.trigger(mouse.x, mouse.y)
+                onClicked: {
+                    const name = usernameField.text.trim()
+                    if (!name) {
+                        ToastService.showError("Please enter a GitHub username")
+                        return
+                    }
+
+                    const interval = parseInt(intervalField.text) || 300
+                    if (interval < 60) {
+                        ToastService.showError("Interval must be at least 60 seconds")
+                        return
+                    }
+
+                    const notify = notifyToggle.checked
+
+                    // Persist & Notify
+                    root.saveValue("username", name)
+                    root.saveValue("refreshInterval", interval)
+                    root.saveValue("showNotifications", notify)
+
+                    ToastService.showSuccess("Settings updated successfully")
                 }
+            }
 
-                const interval = parseInt(intervalField.text) || 300
-                if (interval < 60) {
-                    ToastService.showError("Interval must be at least 60 seconds")
-                    return
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.cornerRadius
+                color: saveArea.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.4)
+                border.width: 1
+                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, saveArea.containsMouse ? 0.3 : 0.15)
+                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on border.color { ColorAnimation { duration: 150 } }
+            }
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 8
+                
+                DankIcon {
+                    id: saveIcon
+                    name: "published_with_changes"
+                    size: 20
+                    color: Theme.primary
+                    
+                    SequentialAnimation {
+                        running: saveArea.containsMouse
+                        loops: Animation.Infinite
+                        onStopped: saveIcon.rotation = 0
+                        NumberAnimation { target: saveIcon; property: "rotation"; to: -8; duration: 150; easing.type: Easing.InOutQuad }
+                        NumberAnimation { target: saveIcon; property: "rotation"; to: 8; duration: 150; easing.type: Easing.InOutQuad }
+                        NumberAnimation { target: saveIcon; property: "rotation"; to: 0; duration: 150; easing.type: Easing.InOutQuad }
+                        PauseAnimation { duration: 400 }
+                    }
                 }
+                
+                StyledText {
+                    text: "Save & Synchronize"
+                    color: Theme.primary
+                    font.pixelSize: Theme.fontSizeMedium
+                    font.bold: true
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
 
-                const notify = notifyToggle.checked
-
-                // Persist & Notify
-                root.saveValue("username", name)
-                root.saveValue("refreshInterval", interval)
-                root.saveValue("showNotifications", notify)
-
-                ToastService.showSuccess("Settings updated successfully")
+            DankRipple {
+                id: saveRipple
+                rippleColor: Theme.surfaceText
+                cornerRadius: Theme.cornerRadius
+                anchors.fill: parent
             }
         }
     }
