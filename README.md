@@ -36,7 +36,7 @@ Integrated GitHub contribution heatmap for Dank Material Shell – monitor your 
 ## Interface
 
 <div align="center">
-  <img src="assets/POP_uUp-UI.png" width="45%" />
+  <img src="assets/POP_Up-UI.png" width="45%" />
 </div>
 
 ## Configuration
