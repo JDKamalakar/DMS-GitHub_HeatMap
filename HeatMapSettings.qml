@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import qs.Common
 import qs.Widgets
 import qs.Modules.Plugins
@@ -21,43 +22,48 @@ PluginSettings {
         defaultValue: 300
     }
 
+    function loadValue(key, def) {
+        return PluginService.loadPluginData(root.pluginId, key, def);
+    }
+
+    function saveValue(key, val) {
+        PluginService.savePluginData(root.pluginId, key, val);
+        PluginService.setGlobalVar(root.pluginId, key, val);
+    }
+
     // Load persisted settings when settings UI opens
     Component.onCompleted: {
-        const savedUsername = PluginService.loadPluginData("githubHeatmap", "username", "")
-        const savedInterval = PluginService.loadPluginData("githubHeatmap", "refreshInterval", 300)
+        const savedUsername = loadValue("username", "")
+        const savedInterval = loadValue("refreshInterval", 300)
 
         console.log("GitHub Heatmap: Settings loaded from disk")
 
         if (savedUsername) {
             usernameField.text = savedUsername
-            PluginService.setGlobalVar("githubHeatmap", "username", savedUsername)
+            PluginService.setGlobalVar(root.pluginId, "username", savedUsername)
         }
 
         intervalField.text = savedInterval.toString()
-        PluginService.setGlobalVar("githubHeatmap", "refreshInterval", savedInterval)
+        PluginService.setGlobalVar(root.pluginId, "refreshInterval", savedInterval)
+
+        const savedNotify = loadValue("showNotifications", true)
+        notifyToggle.checked = (savedNotify === true || savedNotify === "true")
+        PluginService.setGlobalVar(root.pluginId, "showNotifications", notifyToggle.checked)
     }
 
     Column {
         width: parent.width
         spacing: Theme.spacingL
 
-        // Header
-        Column {
+        // Intro / Header
+        Row {
             width: parent.width
-            spacing: Theme.spacingXS
-
-            StyledText {
-                text: "GitHub Heatmap Settings"
-                font.pixelSize: Theme.fontSizeLarge
-                font.weight: Font.Bold
-                color: Theme.surfaceText
-            }
-
-            StyledText {
-                text: "Visualize your GitHub contribution activity. This plugin fetches public data from your profile."
-                font.pixelSize: Theme.fontSizeSmall
-                color: Theme.surfaceVariantText
-                wrapMode: Text.WordWrap
+            spacing: Theme.spacingM
+            DankIcon { name: "settings"; size: 24; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
+            Column {
+                spacing: 2
+                StyledText { text: "GitHub Heatmap Configuration"; font.bold: true; font.pixelSize: Theme.fontSizeLarge; color: Theme.surfaceText }
+                StyledText { text: "Manage your GitHub identity and performance settings."; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceVariantText }
             }
         }
 
@@ -159,6 +165,59 @@ PluginSettings {
             }
         }
 
+        // --- Notification Section ---
+        Rectangle {
+            width: parent.width
+            height: notifyRow.implicitHeight + Theme.spacingM * 2
+            color: Theme.surfaceContainer
+            radius: Theme.cornerRadius
+            border.color: Theme.outline
+            border.width: 1
+            opacity: 0.8
+
+            RowLayout {
+                id: notifyRow
+                anchors.fill: parent
+                anchors.margins: Theme.spacingM
+                spacing: Theme.spacingM
+
+                DankIcon { 
+                    name: "notifications"
+                    size: 22
+                    opacity: 0.8
+                    Layout.alignment: Qt.AlignVCenter 
+                }
+                
+                Column {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    Layout.alignment: Qt.AlignVCenter
+                    StyledText {
+                        text: "System Alerts"
+                        font.pixelSize: Theme.fontSizeMedium
+                        font.weight: Font.Medium
+                        color: Theme.surfaceText
+                    }
+                    StyledText {
+                        text: "Show desktop notifications for sync status."
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.surfaceVariantText
+                        width: parent.width * 0.7 // Avoid overlapping toggle
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                DankToggle {
+                    id: notifyToggle
+                    Layout.alignment: Qt.AlignVCenter
+                    checked: true
+                    onClicked: {
+                        checked = !checked
+                    }
+                }
+            }
+        }
+
         // --- Save Action ---
         DankButton {
             width: parent.width
@@ -181,13 +240,12 @@ PluginSettings {
                     return
                 }
 
-                // Persist
-                PluginService.savePluginData("githubHeatmapRevive", "username", name)
-                PluginService.savePluginData("githubHeatmapRevive", "refreshInterval", interval)
+                const notify = notifyToggle.checked
 
-                // Notify Memory
-                PluginService.setGlobalVar("githubHeatmapRevive", "username", name)
-                PluginService.setGlobalVar("githubHeatmapRevive", "refreshInterval", interval)
+                // Persist & Notify
+                root.saveValue("username", name)
+                root.saveValue("refreshInterval", interval)
+                root.saveValue("showNotifications", notify)
 
                 ToastService.showSuccess("Settings updated successfully")
             }

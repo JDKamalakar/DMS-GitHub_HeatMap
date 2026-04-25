@@ -5,13 +5,40 @@ import qs.Common
 import qs.Services
 import qs.Widgets
 import qs.Modules.Plugins
+import QtQuick.Layouts
+import QtQuick.Controls
+import Qt5Compat.GraphicalEffects
 
 PluginComponent {
     id: root
 
-    // Popout dimensions
     popoutWidth: 320
-    popoutHeight: 380
+    popoutHeight: 460
+
+    property bool showNotifications: (pluginData && pluginData.showNotifications !== undefined) ? pluginData.showNotifications : true
+    
+    // --- Internal State ---
+    ccWidgetIcon: "commit"
+    ccWidgetPrimaryText: "GitHub HeatMap"
+    ccWidgetSecondaryText: root.isLoading ? "Syncing..." : (root.isError ? "Error" : root.totalContributions + " commits")
+    ccWidgetIsActive: !root.isError && root.githubUsername !== ""
+    ccDetailHeight: 520
+    onCcWidgetExpanded: root.refreshHeatmap()
+    
+    ccDetailContent: Component {
+        ScrollView {
+            anchors.fill: parent
+            clip: false
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+            
+            Loader {
+                width: parent.width
+                sourceComponent: heatmapWidgetContent
+                readonly property bool inCC: true
+            }
+        }
+    }
 
     // Icons
     readonly property string iconBar: "commit"
@@ -35,17 +62,48 @@ PluginComponent {
     property string errorMessage: ""
     property var lastRefreshTime: null
     property bool isManualRefresh: false
+    property var selectedDay: null
+    property var todayDay: null
 
-    // Initialize with 7 placeholder items
+    // Initialize with cached data if available
     Component.onCompleted: {
-        initializePlaceholders()
+        const cachedTotal = PluginService.loadPluginData("githubHeatmapRevive", "cachedTotal", "")
+        const cachedGridStr = PluginService.loadPluginData("githubHeatmapRevive", "cachedGrid", "")
+        
+        if (cachedTotal && cachedGridStr) {
+            try {
+                const cachedGrid = JSON.parse(cachedGridStr)
+                root.totalContributions = cachedTotal
+                root.gridData = cachedGrid
+                
+                // Restore todayDay and selectedDay
+                if (root.gridData.length > 0) {
+                    const lastWeek = root.gridData[root.gridData.length - 1]
+                    root.todayDay = lastWeek[lastWeek.length - 1]
+                    root.selectedDay = root.todayDay
+                }
+                root.isError = false
+            } catch (e) {
+                console.error("GitHub: Failed to parse persistent cache")
+                initializePlaceholders()
+            }
+        } else {
+            initializePlaceholders()
+        }
 
-        // Start timer if credentials present
-        Qt.callLater(function() {
+        // Start timer after a delay to ensure network is ready
+        startupDelay.start()
+    }
+
+    Timer {
+        id: startupDelay
+        interval: 5000 // 5 second delay for network stability
+        repeat: false
+        onTriggered: {
             if (githubUsername) {
                 refreshTimer.start()
             }
-        })
+        }
     }
 
     // Watch for credential changes
@@ -60,6 +118,7 @@ PluginComponent {
         if (githubUsername) {
             if (!refreshTimer.running) {
                 refreshTimer.start()
+                root.refreshHeatmap() // Immediate fetch on username change
             }
         } else {
             refreshTimer.stop()
@@ -101,6 +160,13 @@ PluginComponent {
             gridPlaceholders.push(weekData)
         }
         gridData = gridPlaceholders
+
+        // Initialize todayDay and selectedDay with the newest placeholder
+        if (gridPlaceholders.length > 0) {
+            const lastWeek = gridPlaceholders[gridPlaceholders.length - 1]
+            root.todayDay = lastWeek[lastWeek.length - 1]
+            root.selectedDay = root.todayDay
+        }
     }
 
     // Shell escape function for security
@@ -143,17 +209,52 @@ PluginComponent {
             return
         }
 
-        // Cooldown: prevent refreshes within 30 seconds of last refresh
+        // Cooldown: prevent refreshes within 30 seconds of last successful refresh
         const now = Date.now()
-        if (lastRefreshTime && (now - lastRefreshTime) < 30000) {
+        if (lastRefreshTime && (now - lastRefreshTime) < 30000 && !root.isRetrying) {
             console.log("GitHub: Skipping refresh (cooldown active)")
             return
         }
 
-        console.log("GitHub: Fetching contributions for", githubUsername)
-        lastRefreshTime = now
+        console.log("GitHub: Checking connectivity...")
         isLoading = true
-        githubProcess.running = true
+        networkCheck.running = false
+        networkCheck.running = true
+    }
+
+    // Network check process
+    Process {
+        id: networkCheck
+        command: ["ping", "-c", "1", "-W", "2", "8.8.8.8"]
+        running: false
+        onExited: (exitCode) => {
+            if (exitCode === 0) {
+                console.log("GitHub: Network UP, starting fetch")
+                root.isRetrying = false
+                githubProcess.running = false
+                githubProcess.running = true
+            } else {
+                console.log("GitHub: Network DOWN, will retry in 2s")
+                root.handleFetchFailure("No internet connection")
+            }
+        }
+    }
+
+    // Handle failure and setup retry
+    property bool isRetrying: false
+    function handleFetchFailure(msg) {
+        root.isError = true
+        root.errorMessage = msg
+        root.isLoading = false
+        root.isRetrying = true
+        retryTimer.start()
+    }
+
+    Timer {
+        id: retryTimer
+        interval: 2000
+        repeat: false
+        onTriggered: root.refreshHeatmap()
     }
 
     // Build the embedded Bash script
@@ -189,7 +290,7 @@ today_timestamp=$(date -d "$today" +%s)
 url="https://github-contributions-api.jogruber.de/v4/$GITHUB_USERNAME?y=last"
 
 temp_response=$(mktemp)
-http_code=$(curl -s -w "%{http_code}" -o "$temp_response" "$url")
+http_code=$(curl -s --retry 3 --retry-delay 2 --connect-timeout 10 -w "%{http_code}" -o "$temp_response" "$url")
 body=$(cat "$temp_response")
 rm -f "$temp_response"
 
@@ -230,7 +331,7 @@ while read -r day_json; do
         total_contributions=$((total_contributions + count))
 
         weekday=$(date -d "$date" +%w)
-        formatted_date=$(date -d "$date" +%m/%d)
+        formatted_date=$(date -d "$date" "+%d / %b / %y")
         tooltip_text=$(date -d "$date" "+%d / %b :: $count")
         
         weekday_names=("Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat")
@@ -398,7 +499,20 @@ exit 0
 
                     root.gridData = newGridData
 
-                    if (root.isManualRefresh) {
+                    // Cache successful fetch persistently
+                    PluginService.savePluginData("githubHeatmapRevive", "cachedTotal", root.totalContributions)
+                    PluginService.savePluginData("githubHeatmapRevive", "cachedGrid", JSON.stringify(root.gridData))
+
+                    // Set default selected day to the most recent one
+                    if (newGridData.length > 0) {
+                        const lastWeek = newGridData[newGridData.length - 1]
+                        if (lastWeek.length > 0) {
+                            root.todayDay = lastWeek[lastWeek.length - 1]
+                            root.selectedDay = root.todayDay
+                        }
+                    }
+
+                    if (root.isManualRefresh && root.showNotifications) {
                         notifySuccess.running = true
                     }
 
@@ -418,9 +532,10 @@ exit 0
                 console.error("GitHub: Script failed with exit code", exitCode)
                 root.isError = true
                 root.errorMessage = "Script failed with exit code: " + exitCode
-                if (root.isManualRefresh) {
+                if (root.isManualRefresh && root.showNotifications) {
                     notifyFail.running = true
                 }
+                root.handleFetchFailure("Sync failed (Check logs)")
             }
         }
     }
@@ -446,15 +561,16 @@ exit 0
 
     // Horizontal bar pill - ALWAYS 7 squares
     horizontalBarPill: Component {
-        Row {
+        RowLayout {
             spacing: 2
+            anchors.verticalCenter: parent.verticalCenter
 
             Repeater {
                 model: 7
 
                 Rectangle {
-                    width: 8
-                    height: 16
+                    Layout.preferredWidth: 8
+                    Layout.preferredHeight: 16
                     radius: 2
                     color: index < root.contributions.length
                            ? root.contributions[index].color
@@ -543,10 +659,10 @@ exit 0
         PluginService.setGlobalVar("githubHeatmapRevive", "popoutY", y)
     }
 
-    // Popout content
+    // --- Popout Content ---
     popoutContent: Component {
         PopoutComponent {
-            id: popout
+            id: popoutContainer
 
             // Restore saved position
             x: root.popoutX >= 0 ? root.popoutX : x
@@ -557,118 +673,154 @@ exit 0
             onYChanged: if (visible) Qt.callLater(() => root.savePopoutPosition(x, y))
 
             showCloseButton: false
-            headerText: "" // We will use our own custom header inside
+            headerText: "" 
 
-            Column {
+            Loader {
+                id: popoutLoader
                 width: parent.width
-                spacing: Theme.spacingM
-                topPadding: Theme.spacingM
-                bottomPadding: Theme.spacingM
+                sourceComponent: heatmapWidgetContent
+                readonly property bool inCC: false
+            }
+        }
+    }
 
-                // Header card
-                Item {
-                    width: parent.width
-                    height: 68
+
+    Component {
+        id: heatmapWidgetContent
+        Column {
+            id: mainCol
+            width: parent.width
+            spacing: Theme.spacingM
+            readonly property bool inCC: (parent && parent.inCC) || false
+            padding: inCC ? 16 : 0
+            topPadding: 0
+            bottomPadding: inCC ? 16 : 2
+
+            // Header card
+            StyledRect {
+                width: parent.width - (mainCol.inCC ? 32 : 0)
+                anchors.horizontalCenter: parent.horizontalCenter
+                height: 72
+                radius: Theme.cornerRadius
+                color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
+                border.width: 1
+                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+
+                layer.enabled: true
+                layer.effect: DropShadow {
+                    transparentBorder: true
+                    horizontalOffset: 0
+                    verticalOffset: 3
+                    radius: 12.0
+                    samples: 24
+                    color: Theme.withAlpha(Theme.shadowColor || "#000000", 0.35)
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: Theme.spacingM
+                    spacing: Theme.spacingM
 
                     Rectangle {
-                        anchors.fill: parent
-                        radius: Theme.cornerRadius * 1.5
-                        gradient: Gradient {
-                            GradientStop {
-                                position: 0.0
-                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
-                            }
-                            GradientStop {
-                                position: 1.0
-                                // Safely handle missing Theme.secondary
-                                property color secondaryColor: Theme.secondary || Theme.primary
-                                color: Qt.rgba(secondaryColor.r, secondaryColor.g, secondaryColor.b, 0.08)
-                            }
-                        }
-                        border.width: 1
-                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25)
-                    }
-
-                    Row {
-                        anchors.left: parent.left
-                        anchors.leftMargin: Theme.spacingM
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: Theme.spacingM
-
-                        Item {
-                            width: 40
-                            height: 40
-                            anchors.verticalCenter: parent.verticalCenter
-                            scale: profileArea.pressed ? 0.9 : (profileArea.containsMouse ? 1.1 : 1.0)
-                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
-
-                            MouseArea {
-                                id: profileArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onPressed: mouse => profileRipple.trigger(mouse.x, mouse.y)
-                                onClicked: if (root.githubUsername) openProfileProcess.running = true
-                            }
-
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: 20
-                                color: profileArea.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.3) : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2)
-                            }
-
-                            StyledText {
-                                text: root.faGithubGlyph
-                                font.family: root.faFamily
-                                font.pixelSize: 22
-                                color: Theme.primary
-                                anchors.centerIn: parent
-                                scale: profileArea.containsMouse ? 1.2 : 1.0
-                                Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
-                            }
-
-                            DankRipple {
-                                id: profileRipple
-                                rippleColor: Theme.surfaceText
-                                cornerRadius: 20
-                                anchors.fill: parent
-                            }
+                        width: 42
+                        height: 42
+                        radius: 21
+                        color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2)
+                        
+                        MouseArea {
+                            id: profileArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onPressed: mouse => profileRipple.trigger(mouse.x, mouse.y)
+                            onClicked: if (root.githubUsername) openProfileProcess.running = true
                         }
 
-                        Column {
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 2
+                        StyledText {
+                            text: root.faGithubGlyph
+                            font.family: root.faFamily
+                            font.pixelSize: 22
+                            color: Theme.primary
+                            anchors.centerIn: parent
+                            scale: profileArea.containsMouse ? 1.2 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
+                        }
 
-                            StyledText {
-                                text: root.githubUsername || "GitHub User"
-                                font.bold: true
-                                font.pixelSize: Theme.fontSizeLarge
-                                color: Theme.surfaceText
-                            }
-
-                            StyledText {
-                                text: root.isError ? "Connection Error" : (root.isLoading ? "Syncing..." : root.totalContributions + " contributions")
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: Theme.surfaceVariantText
-                            }
+                        DankRipple {
+                            id: profileRipple
+                            rippleColor: Theme.surfaceText
+                            cornerRadius: 21
+                            anchors.fill: parent
                         }
                     }
 
-                    // Refresh button
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+                        
+                        StyledText {
+                            id: usernameText
+                            Layout.fillWidth: true
+                            text: root.githubUsername || "GitHub User"
+                            font.bold: true
+                            font.pixelSize: Theme.fontSizeLarge
+                            color: Theme.surfaceText
+                            elide: Text.ElideRight
+                            
+                            onTextChanged: usernameAnim.restart()
+                            transform: Translate { id: usernameTrans }
+                            SequentialAnimation {
+                                id: usernameAnim
+                                ParallelAnimation {
+                                    NumberAnimation { target: usernameText; property: "opacity"; to: 0; duration: 150; easing.type: Easing.OutQuad }
+                                    NumberAnimation { target: usernameTrans; property: "y"; to: 5; duration: 150; easing.type: Easing.OutQuad }
+                                }
+                                PropertyAction { target: usernameTrans; property: "y"; value: -5 }
+                                ParallelAnimation {
+                                    NumberAnimation { target: usernameText; property: "opacity"; to: 1; duration: 150; easing.type: Easing.InQuad }
+                                    NumberAnimation { target: usernameTrans; property: "y"; to: 0; duration: 150; easing.type: Easing.InQuad }
+                                }
+                            }
+                        }
+
+                        StyledText {
+                            id: contributionStatusText
+                            Layout.fillWidth: true
+                            text: root.isError ? "Connection Error" : (root.isLoading ? "Syncing..." : root.totalContributions + " contributions")
+                            font.pixelSize: Theme.fontSizeSmall - 1
+                            color: Theme.primary
+                            opacity: 0.8
+                            
+                            onTextChanged: statusAnim.restart()
+                            transform: Translate { id: statusTrans }
+                            SequentialAnimation {
+                                id: statusAnim
+                                ParallelAnimation {
+                                    NumberAnimation { target: contributionStatusText; property: "opacity"; to: 0; duration: 150; easing.type: Easing.OutQuad }
+                                    NumberAnimation { target: statusTrans; property: "y"; to: 5; duration: 150; easing.type: Easing.OutQuad }
+                                }
+                                PropertyAction { target: statusTrans; property: "y"; value: -5 }
+                                ParallelAnimation {
+                                    NumberAnimation { target: contributionStatusText; property: "opacity"; to: 0.8; duration: 150; easing.type: Easing.InQuad }
+                                    NumberAnimation { target: statusTrans; property: "y"; to: 0; duration: 150; easing.type: Easing.InQuad }
+                                }
+                            }
+                        }
+                    }
+
                     Item {
                         width: 38
                         height: 38
-                        anchors.right: parent.right
-                        anchors.rightMargin: Theme.spacingM
-                        anchors.verticalCenter: parent.verticalCenter
+                        Layout.alignment: Qt.AlignVCenter
                         scale: refreshArea.pressed ? 0.9 : (refreshArea.containsMouse ? 1.1 : 1.0)
                         Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
                         MouseArea {
                             id: refreshArea
                             anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                            hoverEnabled: !root.isLoading
+                            enabled: !root.isLoading
+                            cursorShape: root.isLoading ? Qt.ArrowCursor : Qt.PointingHandCursor
                             onPressed: mouse => refreshRipple.trigger(mouse.x, mouse.y)
                             onClicked: {
                                 root.isManualRefresh = true
@@ -688,7 +840,7 @@ exit 0
 
                         DankIcon {
                             id: refreshIcon
-                            name: root.iconRefresh
+                            name: root.isLoading ? "cached" : root.iconRefresh
                             size: 20
                             color: Theme.primary
                             anchors.centerIn: parent
@@ -719,37 +871,57 @@ exit 0
                         }
                     }
                 }
+            }
 
-                // Error display
-                StyledRect {
-                    width: parent.width
-                    height: root.isError ? 60 : 0
-                    radius: Theme.cornerRadius
-                    color: Theme.errorContainer || Theme.surfaceContainerHigh
-                    visible: root.isError
-                    clip: true
-                    Behavior on height { NumberAnimation { duration: 200 } }
+            // Error display
+            StyledRect {
+                width: parent.width - (mainCol.inCC ? 32 : 0)
+                anchors.horizontalCenter: parent.horizontalCenter
+                height: root.isError ? 60 : 0
+                radius: Theme.cornerRadius
+                color: Theme.errorContainer || Theme.surfaceContainerHigh
+                visible: root.isError
+                clip: true
+                Behavior on height { NumberAnimation { duration: 200 } }
 
-                    StyledText {
-                        anchors.centerIn: parent
-                        width: parent.width - Theme.spacingL * 2
-                        text: root.errorMessage
-                        wrapMode: Text.WordWrap
-                        horizontalAlignment: Text.AlignHCenter
-                        color: Theme.onErrorContainer || Theme.error
-                        font.pixelSize: Theme.fontSizeSmall
-                    }
+                StyledText {
+                    anchors.centerIn: parent
+                    width: parent.width - Theme.spacingL * 2
+                    text: root.errorMessage
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignHCenter
+                    color: Theme.onErrorContainer || Theme.error
+                    font.pixelSize: Theme.fontSizeSmall
+                }
+            }
+
+            // Calendar grid container
+            StyledRect {
+                id: gridContainer
+                width: parent.width - (mainCol.inCC ? 32 : 0)
+                anchors.horizontalCenter: parent.horizontalCenter
+                height: 240
+                radius: Theme.cornerRadius
+                color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
+                border.width: 1
+                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                visible: !root.isError
+
+                layer.enabled: true
+                layer.effect: DropShadow {
+                    transparentBorder: true
+                    horizontalOffset: 0
+                    verticalOffset: 3
+                    radius: 12.0
+                    samples: 24
+                    color: Theme.withAlpha(Theme.shadowColor || "#000000", 0.35)
                 }
 
-                // Calendar grid container
-                StyledRect {
-                    width: parent.width
-                    height: 240
-                    radius: Theme.cornerRadius * 1.5
-                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.5)
-                    border.width: 1
-                    border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.1)
-                    visible: !root.isError
+                    // Detect when the mouse leaves the entire grid area to reset to "today"
+                    HoverHandler {
+                        id: gridHover
+                        onHoveredChanged: if (!hovered) root.selectedDay = root.todayDay
+                    }
 
                     Row {
                         anchors.centerIn: parent
@@ -789,8 +961,8 @@ exit 0
                                             height: 26
                                             radius: 4
                                             color: modelData.color || Theme.surfaceContainer
-                                            border.color: Qt.darker(color, 1.15)
-                                            border.width: 1
+                                            border.color: root.selectedDay === modelData ? Theme.primary : Qt.darker(color, 1.15)
+                                            border.width: root.selectedDay === modelData ? 2 : 1
                                             required property var modelData
                                             opacity: root.isLoading ? 0.6 : 1.0
                                             Behavior on opacity { NumberAnimation { duration: 200 } }
@@ -800,12 +972,7 @@ exit 0
                                                 id: cellMouse
                                                 anchors.fill: parent
                                                 hoverEnabled: true
-                                                onEntered: {
-                                                    if (modelData.tooltipText) {
-                                                        root.showTooltip(modelData.tooltipText, cellMouse);
-                                                    }
-                                                }
-                                                onExited: tooltip.hide()
+                                                onEntered: root.selectedDay = modelData
                                             }
                                         }
                                     }
@@ -814,6 +981,94 @@ exit 0
                         }
                     }
                 }
+
+                // Contribution detail card
+                StyledRect {
+                    width: parent.width - (mainCol.inCC ? 32 : 0)
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    height: 80
+                    radius: Theme.cornerRadius
+                    color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
+                    border.width: 1
+                    border.color: root.selectedDay ? Qt.rgba(root.selectedDay.color.r, root.selectedDay.color.g, root.selectedDay.color.b, 0.4) : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                    visible: root.selectedDay !== null && !root.isError
+                    clip: true
+
+                    layer.enabled: true
+                    layer.effect: DropShadow {
+                        transparentBorder: true
+                        horizontalOffset: 0
+                        verticalOffset: 3
+                        radius: 12.0
+                        samples: 24
+                        color: Theme.withAlpha(Theme.shadowColor || "#000000", 0.35)
+                    }
+
+                    Behavior on border.color { ColorAnimation { duration: 300 } }
+
+                    Row {
+                        anchors.fill: parent
+                        anchors.margins: Theme.spacingM
+                        spacing: Theme.spacingM
+
+                        // Count large display
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+                            width: 80
+
+                            StyledText {
+                                text: root.selectedDay ? root.selectedDay.count : "0"
+                                font.pixelSize: 32
+                                font.bold: true
+                                color: root.selectedDay ? root.selectedDay.color : Theme.surfaceText
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+
+                            StyledText {
+                                text: "contributions"
+                                font.pixelSize: 10
+                                color: Theme.surfaceVariantText
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                        }
+
+                        // Vertical separator
+                        Rectangle {
+                            height: parent.height - Theme.spacingS
+                            width: 1
+                            color: Theme.outlineVariant
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        // Date and day info
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 4
+
+                            Row {
+                                spacing: Theme.spacingS
+                                DankIcon {
+                                    name: root.iconBar
+                                    size: 16
+                                    color: Theme.primary
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                                StyledText {
+                                    text: root.selectedDay ? root.selectedDay.weekdayName : ""
+                                    font.bold: true
+                                    font.pixelSize: Theme.fontSizeMedium
+                                    color: Theme.surfaceText
+                                }
+                            }
+
+                            StyledText {
+                                text: root.selectedDay ? root.selectedDay.date : ""
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: Theme.surfaceVariantText
+                            }
+                        }
+                    }
             }
         }
     }
