@@ -17,29 +17,6 @@ PluginComponent {
 
     property bool showNotifications: (pluginData && pluginData.showNotifications !== undefined) ? pluginData.showNotifications : true
     
-    // --- Internal State ---
-    ccWidgetIcon: "commit"
-    ccWidgetPrimaryText: "GitHub HeatMap"
-    ccWidgetSecondaryText: root.isLoading ? "Syncing..." : (root.isError ? "Error" : root.totalContributions + " commits")
-    ccWidgetIsActive: !root.isError && root.githubUsername !== ""
-    ccDetailHeight: 520
-    onCcWidgetExpanded: root.refreshHeatmap()
-    
-    ccDetailContent: Component {
-        ScrollView {
-            anchors.fill: parent
-            clip: false
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
-            
-            Loader {
-                width: parent.width
-                sourceComponent: heatmapWidgetContent
-                readonly property bool inCC: true
-            }
-        }
-    }
-
     // Icons
     readonly property string iconBar: "commit"
     readonly property string iconRefresh: "refresh"
@@ -216,28 +193,11 @@ PluginComponent {
             return
         }
 
-        console.log("GitHub: Checking connectivity...")
+        console.log("GitHub: Starting fetch...")
         isLoading = true
-        networkCheck.running = false
-        networkCheck.running = true
-    }
-
-    // Network check process
-    Process {
-        id: networkCheck
-        command: ["ping", "-c", "1", "-W", "2", "8.8.8.8"]
-        running: false
-        onExited: (exitCode) => {
-            if (exitCode === 0) {
-                console.log("GitHub: Network UP, starting fetch")
-                root.isRetrying = false
-                githubProcess.running = false
-                githubProcess.running = true
-            } else {
-                console.log("GitHub: Network DOWN, will retry in 2s")
-                root.handleFetchFailure("No internet connection")
-            }
-        }
+        root.isRetrying = false
+        githubProcess.running = false
+        githubProcess.running = true
     }
 
     // Handle failure and setup retry
@@ -586,19 +546,6 @@ exit 0
                     Behavior on color {
                         ColorAnimation { duration: 300 }
                     }
-
-                    MouseArea {
-                        id: pillMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onEntered: {
-                            const dayData = root.contributions[index];
-                            if (dayData && dayData.tooltipText) {
-                                root.showTooltip(dayData.tooltipText, pillMouse);
-                            }
-                        }
-                        onExited: tooltip.hide()
-                    }
                 }
             }
         }
@@ -629,19 +576,6 @@ exit 0
 
                     Behavior on color {
                         ColorAnimation { duration: 300 }
-                    }
-
-                    MouseArea {
-                        id: verticalPillMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onEntered: {
-                            const dayData = root.contributions[index];
-                            if (dayData && dayData.tooltipText) {
-                                root.showTooltip(dayData.tooltipText, verticalPillMouse);
-                            }
-                        }
-                        onExited: tooltip.hide()
                     }
                 }
             }
@@ -679,7 +613,6 @@ exit 0
                 id: popoutLoader
                 width: parent.width
                 sourceComponent: heatmapWidgetContent
-                readonly property bool inCC: false
             }
         }
     }
@@ -691,14 +624,13 @@ exit 0
             id: mainCol
             width: parent.width
             spacing: Theme.spacingM
-            readonly property bool inCC: (parent && parent.inCC) || false
-            padding: inCC ? 16 : 0
+            padding: 0
             topPadding: 0
-            bottomPadding: inCC ? 16 : 2
+            bottomPadding: 2
 
             // Header card
             StyledRect {
-                width: parent.width - (mainCol.inCC ? 32 : 0)
+                width: parent.width
                 anchors.horizontalCenter: parent.horizontalCenter
                 height: 72
                 radius: Theme.cornerRadius
@@ -875,7 +807,7 @@ exit 0
 
             // Error display
             StyledRect {
-                width: parent.width - (mainCol.inCC ? 32 : 0)
+                width: parent.width
                 anchors.horizontalCenter: parent.horizontalCenter
                 height: root.isError ? 60 : 0
                 radius: Theme.cornerRadius
@@ -898,7 +830,7 @@ exit 0
             // Calendar grid container
             StyledRect {
                 id: gridContainer
-                width: parent.width - (mainCol.inCC ? 32 : 0)
+                width: parent.width
                 anchors.horizontalCenter: parent.horizontalCenter
                 height: 240
                 radius: Theme.cornerRadius
@@ -984,7 +916,7 @@ exit 0
 
                 // Contribution detail card
                 StyledRect {
-                    width: parent.width - (mainCol.inCC ? 32 : 0)
+                    width: parent.width
                     anchors.horizontalCenter: parent.horizontalCenter
                     height: 80
                     radius: Theme.cornerRadius
