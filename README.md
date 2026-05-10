@@ -7,7 +7,7 @@
 # [DMS-GitHub_HeatMap](#)
 
 ### Visual Contribution Tracker
-Integrated GitHub contribution heatmap for Dank Material Shell – monitor your coding streaks with style. (Revived)
+Integrated GitHub contribution heatmap for Dank Material Shell – monitor your coding streaks with style. **(Revived)**
 
 [![DMS Compatible](https://img.shields.io/badge/DMS-Compatible-purple.svg?labelColor=27303D)](https://github.com/Dank-Material-Shell)
 [![License](https://img.shields.io/badge/License-DMS-blue.svg?labelColor=27303D&color=0877d2)](https://github.com/DankMaterialShell)
