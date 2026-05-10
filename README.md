@@ -4,7 +4,7 @@
     <img src="assets/icons/commit.svg" alt="GitHub HeatMap logo" title="GitHub HeatMap logo" width="80"/>
 </a>
 
-# [DMS-GitHub_HeatMap](#)
+# [DMS-GitHub_HeatMap (Revived)](#)
 
 ### Visual Contribution Tracker
 Integrated GitHub contribution heatmap for Dank Material Shell – monitor your coding streaks with style.
