@@ -55,17 +55,7 @@ PluginSettings {
         width: parent.width
         spacing: Theme.spacingL
 
-        // Intro / Header
-        Row {
-            width: parent.width
-            spacing: Theme.spacingM
-            DankIcon { name: "settings"; size: 24; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
-            Column {
-                spacing: 2
-                StyledText { text: "GitHub Heatmap Configuration"; font.bold: true; font.pixelSize: Theme.fontSizeLarge; color: Theme.surfaceText }
-                StyledText { text: "Manage your GitHub identity and performance settings."; font.pixelSize: Theme.fontSizeSmall; color: Theme.surfaceVariantText }
-            }
-        }
+
 
         // --- Account Section ---
         Rectangle {
