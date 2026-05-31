@@ -3,7 +3,7 @@
   "name": "GitHub Heatmap Revive",
   "description": "Display GitHub contribution heatmap with color-coded activity levels",
   "category": "utilities",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "author": "JDKamalakar",
   "icon": "code",
   "type": "widget",

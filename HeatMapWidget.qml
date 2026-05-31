@@ -7,7 +7,6 @@ import qs.Widgets
 import qs.Modules.Plugins
 import QtQuick.Layouts
 import QtQuick.Controls
-import Qt5Compat.GraphicalEffects
 
 PluginComponent {
     id: root
@@ -41,6 +40,7 @@ PluginComponent {
     property bool isManualRefresh: false
     property var selectedDay: null
     property var todayDay: null
+    property var yesterdayDay: null
 
     // Initialize with cached data if available
     Component.onCompleted: {
@@ -53,12 +53,31 @@ PluginComponent {
                 root.totalContributions = cachedTotal
                 root.gridData = cachedGrid
                 
-                // Restore todayDay and selectedDay
-                if (root.gridData.length > 0) {
+                // Restore todayDay, yesterdayDay and selectedDay
+                let validDays = []
+                for (let w = 0; w < root.gridData.length; w++) {
+                    for (let d = 0; d < root.gridData[w].length; d++) {
+                        if (root.gridData[w][d].date !== "--/--") {
+                            validDays.push(root.gridData[w][d])
+                        }
+                    }
+                }
+                if (validDays.length > 0) {
+                    root.todayDay = validDays[validDays.length - 1]
+                    if (validDays.length > 1) {
+                        root.yesterdayDay = validDays[validDays.length - 2]
+                    }
+                } else if (root.gridData.length > 0) {
                     const lastWeek = root.gridData[root.gridData.length - 1]
                     root.todayDay = lastWeek[lastWeek.length - 1]
-                    root.selectedDay = root.todayDay
+                    if (lastWeek.length > 1) {
+                        root.yesterdayDay = lastWeek[lastWeek.length - 2]
+                    } else if (root.gridData.length > 1) {
+                        const prevWeek = root.gridData[root.gridData.length - 2]
+                        root.yesterdayDay = prevWeek[prevWeek.length - 1]
+                    }
                 }
+                root.selectedDay = root.todayDay
                 root.isError = false
             } catch (e) {
                 console.error("GitHub: Failed to parse persistent cache")
@@ -138,12 +157,31 @@ PluginComponent {
         }
         gridData = gridPlaceholders
 
-        // Initialize todayDay and selectedDay with the newest placeholder
-        if (gridPlaceholders.length > 0) {
+        // Initialize todayDay, yesterdayDay and selectedDay with the newest placeholder
+        let pValidDays = []
+        for (let w = 0; w < gridPlaceholders.length; w++) {
+            for (let d = 0; d < gridPlaceholders[w].length; d++) {
+                if (gridPlaceholders[w][d].date !== "--/--") {
+                    pValidDays.push(gridPlaceholders[w][d])
+                }
+            }
+        }
+        if (pValidDays.length > 0) {
+            root.todayDay = pValidDays[pValidDays.length - 1]
+            if (pValidDays.length > 1) {
+                root.yesterdayDay = pValidDays[pValidDays.length - 2]
+            }
+        } else if (gridPlaceholders.length > 0) {
             const lastWeek = gridPlaceholders[gridPlaceholders.length - 1]
             root.todayDay = lastWeek[lastWeek.length - 1]
-            root.selectedDay = root.todayDay
+            if (lastWeek.length > 1) {
+                root.yesterdayDay = lastWeek[lastWeek.length - 2]
+            } else if (gridPlaceholders.length > 1) {
+                const prevWeek = gridPlaceholders[gridPlaceholders.length - 2]
+                root.yesterdayDay = prevWeek[prevWeek.length - 1]
+            }
         }
+        root.selectedDay = root.todayDay
     }
 
     // Shell escape function for security
@@ -464,13 +502,30 @@ exit 0
                     PluginService.savePluginData("githubHeatmapRevive", "cachedGrid", JSON.stringify(root.gridData))
 
                     // Set default selected day to the most recent one
-                    if (newGridData.length > 0) {
-                        const lastWeek = newGridData[newGridData.length - 1]
-                        if (lastWeek.length > 0) {
-                            root.todayDay = lastWeek[lastWeek.length - 1]
-                            root.selectedDay = root.todayDay
+                    let nValidDays = []
+                    for (let w = 0; w < newGridData.length; w++) {
+                        for (let d = 0; d < newGridData[w].length; d++) {
+                            if (newGridData[w][d].date !== "--/--") {
+                                nValidDays.push(newGridData[w][d])
+                            }
                         }
                     }
+                    if (nValidDays.length > 0) {
+                        root.todayDay = nValidDays[nValidDays.length - 1]
+                        if (nValidDays.length > 1) {
+                            root.yesterdayDay = nValidDays[nValidDays.length - 2]
+                        }
+                    } else if (newGridData.length > 0) {
+                        const lastWeek = newGridData[newGridData.length - 1]
+                        root.todayDay = lastWeek[lastWeek.length - 1]
+                        if (lastWeek.length > 1) {
+                            root.yesterdayDay = lastWeek[lastWeek.length - 2]
+                        } else if (newGridData.length > 1) {
+                            const prevWeek = newGridData[newGridData.length - 2]
+                            root.yesterdayDay = prevWeek[prevWeek.length - 1]
+                        }
+                    }
+                    root.selectedDay = root.todayDay
 
                     if (root.isManualRefresh && root.showNotifications) {
                         notifySuccess.running = true
@@ -638,16 +693,6 @@ exit 0
                 border.width: 1
                 border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
 
-                layer.enabled: true
-                layer.effect: DropShadow {
-                    transparentBorder: true
-                    horizontalOffset: 0
-                    verticalOffset: 3
-                    radius: 12.0
-                    samples: 24
-                    color: Theme.withAlpha(Theme.shadowColor || "#000000", 0.35)
-                }
-
                 RowLayout {
                     anchors.fill: parent
                     anchors.margins: Theme.spacingM
@@ -758,6 +803,11 @@ exit 0
                                 root.isManualRefresh = true
                                 root.refreshHeatmap()
                             }
+                            onExited: {
+                                if (!root.isLoading) {
+                                    refreshIcon.rotation = 0
+                                }
+                            }
                         }
 
                         Rectangle {
@@ -792,6 +842,7 @@ exit 0
                                 duration: 1000
                                 loops: Animation.Infinite
                                 running: root.isLoading
+                                onStopped: refreshIcon.rotation = 0
                             }
                         }
 
@@ -838,16 +889,6 @@ exit 0
                 border.width: 1
                 border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
                 visible: !root.isError
-
-                layer.enabled: true
-                layer.effect: DropShadow {
-                    transparentBorder: true
-                    horizontalOffset: 0
-                    verticalOffset: 3
-                    radius: 12.0
-                    samples: 24
-                    color: Theme.withAlpha(Theme.shadowColor || "#000000", 0.35)
-                }
 
                     // Detect when the mouse leaves the entire grid area to reset to "today"
                     HoverHandler {
@@ -926,16 +967,6 @@ exit 0
                     visible: root.selectedDay !== null && !root.isError
                     clip: true
 
-                    layer.enabled: true
-                    layer.effect: DropShadow {
-                        transparentBorder: true
-                        horizontalOffset: 0
-                        verticalOffset: 3
-                        radius: 12.0
-                        samples: 24
-                        color: Theme.withAlpha(Theme.shadowColor || "#000000", 0.35)
-                    }
-
                     Behavior on border.color { ColorAnimation { duration: 300 } }
 
                     Row {
@@ -995,7 +1026,12 @@ exit 0
                             }
 
                             StyledText {
-                                text: root.selectedDay ? root.selectedDay.date : ""
+                                text: {
+                                    if (!root.selectedDay) return ""
+                                    if (root.selectedDay === root.todayDay) return "Today"
+                                    if (root.selectedDay === root.yesterdayDay) return "Yesterday"
+                                    return root.selectedDay.date
+                                }
                                 font.pixelSize: Theme.fontSizeSmall
                                 color: Theme.surfaceVariantText
                             }
