@@ -595,11 +595,11 @@ exit 0
                     opacity: root.isLoading ? 0.6 : 1.0
 
                     Behavior on opacity {
-                        NumberAnimation { duration: 200 }
+                        NumberAnimation { duration: 150 }
                     }
 
                     Behavior on color {
-                        ColorAnimation { duration: 300 }
+                        ColorAnimation { duration: 150 }
                     }
                 }
             }
@@ -626,11 +626,11 @@ exit 0
                     opacity: root.isLoading ? 0.6 : 1.0
 
                     Behavior on opacity {
-                        NumberAnimation { duration: 200 }
+                        NumberAnimation { duration: 150 }
                     }
 
                     Behavior on color {
-                        ColorAnimation { duration: 300 }
+                        ColorAnimation { duration: 150 }
                     }
                 }
             }
@@ -667,6 +667,7 @@ exit 0
             Loader {
                 id: popoutLoader
                 width: parent.width
+                asynchronous: true
                 sourceComponent: heatmapWidgetContent
             }
         }
@@ -691,7 +692,7 @@ exit 0
                 radius: Theme.cornerRadius
                 color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
                 border.width: 1
-                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                border.color: Theme.withAlpha(Theme.primary, 0.15)
 
                 RowLayout {
                     anchors.fill: parent
@@ -702,7 +703,7 @@ exit 0
                         width: 42
                         height: 42
                         radius: 21
-                        color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2)
+                        color: Theme.withAlpha(Theme.primary, 0.2)
                         
                         MouseArea {
                             id: profileArea
@@ -720,7 +721,7 @@ exit 0
                             color: Theme.primary
                             anchors.centerIn: parent
                             scale: profileArea.containsMouse ? 1.2 : 1.0
-                            Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
+                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
                         }
 
                         DankRipple {
@@ -813,9 +814,9 @@ exit 0
                         Rectangle {
                             anchors.fill: parent
                             radius: Theme.cornerRadius
-                            color: refreshArea.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.4)
+                            color: refreshArea.pressed ? Theme.withAlpha(Theme.primary, 0.18) : (refreshArea.containsMouse ? Theme.withAlpha(Theme.primary, 0.10) : Theme.withAlpha(Theme.secondary, 0.04))
                             border.width: 1
-                            border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, refreshArea.containsMouse ? 0.3 : 0.15)
+                            border.color: refreshArea.pressed ? Theme.withAlpha(Theme.primary, 0.60) : (refreshArea.containsMouse ? Theme.withAlpha(Theme.primary, 0.40) : Theme.withAlpha(Theme.secondary, 0.15))
                             Behavior on color { ColorAnimation { duration: 150 } }
                             Behavior on border.color { ColorAnimation { duration: 150 } }
                         }
@@ -830,10 +831,12 @@ exit 0
                             SequentialAnimation {
                                 id: hoverSpinAnim
                                 running: refreshArea.containsMouse && !root.isLoading
+                                loops: Animation.Infinite
                                 onStopped: refreshIcon.rotation = 0
-                                NumberAnimation { target: refreshIcon; property: "rotation"; from: 0; to: 45; duration: 200; easing.type: Easing.OutQuad }
-                                NumberAnimation { target: refreshIcon; property: "rotation"; from: 45; to: -45; duration: 400; easing.type: Easing.InOutQuad }
-                                NumberAnimation { target: refreshIcon; property: "rotation"; from: -45; to: 0; duration: 200; easing.type: Easing.InQuad }
+                                NumberAnimation { target: refreshIcon; property: "rotation"; to: -8; duration: 150; easing.type: Easing.InOutQuad }
+                                NumberAnimation { target: refreshIcon; property: "rotation"; to: 8; duration: 150; easing.type: Easing.InOutQuad }
+                                NumberAnimation { target: refreshIcon; property: "rotation"; to: 0; duration: 150; easing.type: Easing.InOutQuad }
+                                PauseAnimation { duration: 400 }
                             }
 
                             RotationAnimation on rotation {
@@ -865,11 +868,11 @@ exit 0
                 color: Theme.errorContainer || Theme.surfaceContainerHigh
                 visible: root.isError
                 clip: true
-                Behavior on height { NumberAnimation { duration: 200 } }
+                Behavior on height { NumberAnimation { duration: 150 } }
 
                 StyledText {
                     anchors.centerIn: parent
-                    width: parent.width - Theme.spacingL * 2
+                    width: Math.max(0, parent.width - Theme.spacingL * 2)
                     text: root.errorMessage
                     wrapMode: Text.WordWrap
                     horizontalAlignment: Text.AlignHCenter
@@ -887,7 +890,7 @@ exit 0
                 radius: Theme.cornerRadius
                 color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
                 border.width: 1
-                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                border.color: Theme.withAlpha(Theme.primary, 0.15)
                 visible: !root.isError
 
                     // Detect when the mouse leaves the entire grid area to reset to "today"
@@ -932,14 +935,15 @@ exit 0
                                         Rectangle {
                                             width: 26
                                             height: 26
-                                            radius: 4
+                                            radius: root.selectedDay === modelData ? 13 : 4
+                                            Behavior on radius { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
                                             color: modelData.color || Theme.surfaceContainer
                                             border.color: root.selectedDay === modelData ? Theme.primary : Qt.darker(color, 1.15)
                                             border.width: root.selectedDay === modelData ? 2 : 1
                                             required property var modelData
                                             opacity: root.isLoading ? 0.6 : 1.0
-                                            Behavior on opacity { NumberAnimation { duration: 200 } }
-                                            Behavior on color { ColorAnimation { duration: 300 } }
+                                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                                            Behavior on color { ColorAnimation { duration: 150 } }
 
                                             MouseArea {
                                                 id: cellMouse
@@ -963,11 +967,11 @@ exit 0
                     radius: Theme.cornerRadius
                     color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
                     border.width: 1
-                    border.color: root.selectedDay ? Qt.rgba(root.selectedDay.color.r, root.selectedDay.color.g, root.selectedDay.color.b, 0.4) : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                    border.color: root.selectedDay ? Qt.rgba(root.selectedDay.color.r, root.selectedDay.color.g, root.selectedDay.color.b, 0.4) : Theme.withAlpha(Theme.primary, 0.15)
                     visible: root.selectedDay !== null && !root.isError
                     clip: true
 
-                    Behavior on border.color { ColorAnimation { duration: 300 } }
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
 
                     Row {
                         anchors.fill: parent
