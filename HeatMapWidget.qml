@@ -11,10 +11,23 @@ import QtQuick.Controls
 PluginComponent {
     id: root
 
-    popoutWidth: 320
-    popoutHeight: 460
+    popoutWidth: {
+        if (root.displayMode === "Month") return 280
+        if (root.displayMode === "2 Month") return 360
+        if (root.displayMode === "Year") return 1650
+        return 320 // Week
+    }
 
-    property bool showNotifications: (pluginData && pluginData.showNotifications !== undefined) ? pluginData.showNotifications : true
+    popoutHeight: {
+        if (root.displayMode === "Week") return 280
+        return 430 // Month, 2 Month, and Year
+    }
+
+    property bool showNotifications: true
+    property bool followThemeColor: true
+    property string displayMode: "2 Month"
+    property string startDay: "Sunday"
+    property bool hideDaysInitials: false
     
     // Icons
     readonly property string iconBar: "commit"
@@ -23,18 +36,150 @@ PluginComponent {
     readonly property string iconOpen: "open_in_browser"
     readonly property string iconSuccess: "check_circle"
 
-    // Settings from pluginData
-    property string githubUsername: (pluginData && pluginData.username) ? pluginData.username : ""
-    property int refreshInterval: (pluginData && pluginData.refreshInterval) ? pluginData.refreshInterval : 300
+    // Settings
+    property string githubUsername: ""
+    property int refreshInterval: 300
+    
+    function readShared(key, defaultValue) {
+        return SettingsData.getPluginSetting(root.pluginId, key, defaultValue)
+    }
+
+    function refreshAll() {
+        root.githubUsername = readShared("username", "")
+        root.refreshInterval = readShared("refreshInterval", 300)
+        root.showNotifications = readShared("showNotifications", true)
+        root.followThemeColor = readShared("followThemeColor", true)
+        root.displayMode = readShared("displayMode", "2 Month")
+        root.startDay = readShared("startDay", "Sunday")
+        root.hideDaysInitials = readShared("hideDaysInitials", false)
+        root.popoutX = readShared("popoutX", -1)
+        root.popoutY = readShared("popoutY", -1)
+    }
+
+    property int lastTriggerValue: parseInt(readShared("forceRefreshTrigger", 0)) || 0
+
+    Connections {
+        target: SettingsData
+        function onPluginSettingsChanged() {
+            root.refreshAll()
+            
+            const trigger = parseInt(SettingsData.getPluginSetting(root.pluginId, "forceRefreshTrigger", 0)) || 0
+            if (trigger > root.lastTriggerValue) {
+                root.lastTriggerValue = trigger
+                root.refreshHeatmap()
+            }
+        }
+    }
     property string faGithubGlyph: "\uf09b"
     property string faFamily: "Font Awesome 6 Brands, Font Awesome 5 Brands, Font Awesome 6 Free, Font Awesome 5 Free"
 
     // State - Always 7 items for fixed width
-    property var contributions: []
-    property var gridData: []  // 4 weeks of data for calendar grid
+    property var rawContributions: []
+    property var rawGridData: []  // 53 weeks of data for calendar grid
+
+    // Classic GitHub-style palette (used when followThemeColor is false).
+    readonly property var classicPalette: ["#202329", "#0e4429", "#006d32", "#26a641", "#39d353"]
+
+    // Map legacy color hex string to contribution level (0-4)
+    function colorToLevel(colorStr) {
+        if (!colorStr) return 0
+        switch (colorStr.toLowerCase()) {
+            case "#0e4429": return 1
+            case "#006d32": return 2
+            case "#26a641": return 3
+            case "#39d353": return 4
+            default: return 0
+        }
+    }
+
+    // Map a contribution level (0-4) to a color, either the classic palette
+    // or a set of shades derived from the current DMS theme's primary color.
+    function levelToColor(level) {
+        const lvl = Math.max(0, Math.min(4, Math.round(level || 0)))
+        if (lvl === 0) {
+            // Empty slots use a faint transparent surfaceText
+            return Theme.withAlpha(Theme.surfaceText, 0.08)
+        }
+        if (!root.followThemeColor) {
+            return root.classicPalette[lvl]
+        }
+        const steps = [0.25, 0.5, 0.75, 1.0]
+        return Theme.withAlpha(Theme.primary, steps[lvl - 1])
+    }
+
+    // Dynamic, theme-aware mapping of contributions and grid data
+    property var contributions: root.rawContributions.map(day => {
+        const lvl = (day.level !== undefined) ? day.level : root.colorToLevel(day.color)
+        return Object.assign({}, day, {
+            color: day.date === "--/--" ? root.levelToColor(0) : root.levelToColor(lvl),
+            level: lvl
+        })
+    })
+
+    property var gridData: root.rawGridData.map(week => {
+        return week.map(day => {
+            const lvl = (day.level !== undefined) ? day.level : root.colorToLevel(day.color)
+            return Object.assign({}, day, {
+                color: day.date === "--/--" ? root.levelToColor(0) : root.levelToColor(lvl),
+                level: lvl
+            })
+        })
+    })
+
+    // Sync selectedDay, todayDay, and yesterdayDay references on gridData update
+    onGridDataChanged: {
+        let validDays = []
+        for (let w = 0; w < gridData.length; w++) {
+            for (let d = 0; d < gridData[w].length; d++) {
+                if (gridData[w][d].date !== "--/--") {
+                    validDays.push(gridData[w][d])
+                }
+            }
+        }
+        
+        let newToday = null
+        let newYesterday = null
+        if (validDays.length > 0) {
+            newToday = validDays[validDays.length - 1]
+            if (validDays.length > 1) {
+                newYesterday = validDays[validDays.length - 2]
+            }
+        } else if (gridData.length > 0) {
+            const lastWeek = gridData[gridData.length - 1]
+            newToday = lastWeek[lastWeek.length - 1]
+            if (lastWeek.length > 1) {
+                newYesterday = lastWeek[lastWeek.length - 2]
+            } else if (gridData.length > 1) {
+                const prevWeek = gridData[gridData.length - 2]
+                newYesterday = prevWeek[prevWeek.length - 1]
+            }
+        }
+
+        // Preserve selected day by matching date
+        let newSelected = null
+        if (selectedDay) {
+            for (let w = 0; w < gridData.length; w++) {
+                for (let d = 0; d < gridData[w].length; d++) {
+                    if (gridData[w][d].date === selectedDay.date) {
+                        newSelected = gridData[w][d]
+                        break
+                    }
+                }
+                if (newSelected) break
+            }
+        }
+
+        // Apply new references
+        todayDay = newToday
+        yesterdayDay = newYesterday
+        selectedDay = newSelected || newToday
+    }
     property string totalContributions: "0"
     property bool isError: false
     property bool isLoading: false
+    onIsLoadingChanged: {
+        SettingsData.setPluginSetting(root.pluginId, "isSyncing", isLoading)
+    }
     property string errorMessage: ""
     property var lastRefreshTime: null
     property bool isManualRefresh: false
@@ -42,49 +187,61 @@ PluginComponent {
     property var todayDay: null
     property var yesterdayDay: null
 
+    property int visibleContributions: {
+        let total = 0;
+        if (!root.gridData || root.gridData.length === 0) return 0;
+        
+        if (root.displayMode === "Week") {
+            let week = root.gridData[root.gridData.length - 1];
+            for (let i = 0; i < week.length; i++) {
+                total += week[i].count;
+            }
+        } else {
+            let weeks = 0;
+            if (root.displayMode === "Month") weeks = 5;
+            else if (root.displayMode === "2 Month") weeks = 9;
+            else if (root.displayMode === "Year") weeks = 53;
+            
+            let sliced = root.gridData.slice(-weeks);
+            for (let w = 0; w < sliced.length; w++) {
+                for (let d = 0; d < sliced[w].length; d++) {
+                    total += sliced[w][d].count;
+                }
+            }
+        }
+        return total;
+    }
+
     // Initialize with cached data if available
     Component.onCompleted: {
-        const cachedTotal = PluginService.loadPluginData("githubHeatmapRevive", "cachedTotal", "")
-        const cachedGridStr = PluginService.loadPluginData("githubHeatmapRevive", "cachedGrid", "")
+        root.refreshAll()
+
+        const cachedTotal = root.readShared("cachedTotal", "")
+        const cachedGridStr = root.readShared("cachedGrid", "")
+        const cachedStartDay = root.readShared("cachedStartDay", "Sunday")
         
-        if (cachedTotal && cachedGridStr) {
+        const cacheValid = (cachedStartDay === root.startDay)
+        
+        if (cachedTotal && cachedGridStr && cacheValid) {
             try {
                 const cachedGrid = JSON.parse(cachedGridStr)
                 root.totalContributions = cachedTotal
-                root.gridData = cachedGrid
-                
-                // Restore todayDay, yesterdayDay and selectedDay
-                let validDays = []
-                for (let w = 0; w < root.gridData.length; w++) {
-                    for (let d = 0; d < root.gridData[w].length; d++) {
-                        if (root.gridData[w][d].date !== "--/--") {
-                            validDays.push(root.gridData[w][d])
-                        }
-                    }
-                }
-                if (validDays.length > 0) {
-                    root.todayDay = validDays[validDays.length - 1]
-                    if (validDays.length > 1) {
-                        root.yesterdayDay = validDays[validDays.length - 2]
-                    }
-                } else if (root.gridData.length > 0) {
-                    const lastWeek = root.gridData[root.gridData.length - 1]
-                    root.todayDay = lastWeek[lastWeek.length - 1]
-                    if (lastWeek.length > 1) {
-                        root.yesterdayDay = lastWeek[lastWeek.length - 2]
-                    } else if (root.gridData.length > 1) {
-                        const prevWeek = root.gridData[root.gridData.length - 2]
-                        root.yesterdayDay = prevWeek[prevWeek.length - 1]
-                    }
-                }
-                root.selectedDay = root.todayDay
+                root.rawGridData = cachedGrid
                 root.isError = false
+                
+                const lastTime = parseInt(root.readShared("lastRefreshTime", "0"))
+                if (lastTime > 0) {
+                    root.lastRefreshTime = lastTime
+                }
             } catch (e) {
                 console.error("GitHub: Failed to parse persistent cache")
                 initializePlaceholders()
             }
         } else {
             initializePlaceholders()
+            if (githubUsername) {
+                root.refreshHeatmap()
+            }
         }
 
         // Start timer after a delay to ensure network is ready
@@ -107,6 +264,13 @@ PluginComponent {
     onRefreshIntervalChanged: {
         if (refreshTimer.running) {
             refreshTimer.restart()
+        }
+    }
+    onStartDayChanged: {
+        if (githubUsername) {
+            root.isManualRefresh = false
+            root.lastRefreshTime = null // clear cooldown
+            root.refreshHeatmap()
         }
     }
 
@@ -132,17 +296,18 @@ PluginComponent {
                 weekday: days[i],
                 date: "--/--",
                 count: 0,
-                color: Theme.surfaceContainer
+                color: Theme.surfaceContainer,
+                level: 0
             })
         }
 
-        contributions = placeholders
+        rawContributions = placeholders
         totalContributions = "0"
         isError = false
 
-        // Initialize grid placeholders (8 weeks × 7 days)
+        // Initialize grid placeholders (53 weeks × 7 days)
         const gridPlaceholders = []
-        for (let week = 0; week < 8; week++) {
+        for (let week = 0; week < 53; week++) {
             const weekData = []
             for (let day = 0; day < 7; day++) {
                 weekData.push({
@@ -150,38 +315,13 @@ PluginComponent {
                     weekdayName: days[day],
                     date: "--/--",
                     count: 0,
-                    color: Theme.surfaceContainer
+                    color: Theme.surfaceContainer,
+                    level: 0
                 })
             }
             gridPlaceholders.push(weekData)
         }
-        gridData = gridPlaceholders
-
-        // Initialize todayDay, yesterdayDay and selectedDay with the newest placeholder
-        let pValidDays = []
-        for (let w = 0; w < gridPlaceholders.length; w++) {
-            for (let d = 0; d < gridPlaceholders[w].length; d++) {
-                if (gridPlaceholders[w][d].date !== "--/--") {
-                    pValidDays.push(gridPlaceholders[w][d])
-                }
-            }
-        }
-        if (pValidDays.length > 0) {
-            root.todayDay = pValidDays[pValidDays.length - 1]
-            if (pValidDays.length > 1) {
-                root.yesterdayDay = pValidDays[pValidDays.length - 2]
-            }
-        } else if (gridPlaceholders.length > 0) {
-            const lastWeek = gridPlaceholders[gridPlaceholders.length - 1]
-            root.todayDay = lastWeek[lastWeek.length - 1]
-            if (lastWeek.length > 1) {
-                root.yesterdayDay = lastWeek[lastWeek.length - 2]
-            } else if (gridPlaceholders.length > 1) {
-                const prevWeek = gridPlaceholders[gridPlaceholders.length - 2]
-                root.yesterdayDay = prevWeek[prevWeek.length - 1]
-            }
-        }
-        root.selectedDay = root.todayDay
+        rawGridData = gridPlaceholders
     }
 
     // Shell escape function for security
@@ -235,6 +375,7 @@ PluginComponent {
         isLoading = true
         root.isRetrying = false
         githubProcess.running = false
+        githubProcess.command = ["/usr/bin/env", "bash", "-c", root.buildScript(root.githubUsername, root.startDay)]
         githubProcess.running = true
     }
 
@@ -256,13 +397,15 @@ PluginComponent {
     }
 
     // Build the embedded Bash script
-    function buildScript() {
-        const escapedUsername = escapeShellString(githubUsername)
+    function buildScript(username, sDay) {
+        const escapedUsername = escapeShellString(username)
+        const escapedStartDay = escapeShellString(sDay)
 
         // NOTE: We must escape ${} as \${} to prevent JS interpolation
         return `
 # GitHub Heatmap Fetcher (Bash + Public API)
 GITHUB_USERNAME="${escapedUsername}"
+START_DAY="${escapedStartDay}"
 
 # GitHub contribution color scheme (dark theme)
 COLOR_0="#202329"
@@ -275,13 +418,22 @@ COLOR_4="#39d353"
 today=$(date +%Y-%m-%d)
 today_dow=$(date -d "$today" +%u)
 
-if [ "$today_dow" = "7" ]; then
-    current_sunday="$today"
+if [ "$START_DAY" = "Monday" ]; then
+    if [ "$today_dow" = "1" ]; then
+        current_start="$today"
+    else
+        days_to_sub=$((today_dow - 1))
+        current_start=$(date -d "$today -$days_to_sub days" +%Y-%m-%d)
+    fi
 else
-    current_sunday=$(date -d "$today -$today_dow days" +%Y-%m-%d)
+    if [ "$today_dow" = "7" ]; then
+        current_start="$today"
+    else
+        current_start=$(date -d "$today -$today_dow days" +%Y-%m-%d)
+    fi
 fi
 
-start_date=$(date -d "$current_sunday -49 days" +%Y-%m-%d)
+start_date=$(date -d "$current_start -364 days" +%Y-%m-%d)
 today_timestamp=$(date -d "$today" +%s)
 
 # 2. Fetch Data (Public API)
@@ -328,15 +480,21 @@ while read -r day_json; do
 
         total_contributions=$((total_contributions + count))
 
-        weekday=$(date -d "$date" +%w)
+        if [ "$START_DAY" = "Monday" ]; then
+            weekday=$(( $(date -d "$date" +%u) - 1 ))
+            weekday_names=("Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun")
+        else
+            weekday=$(date -d "$date" +%w)
+            weekday_names=("Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat")
+        fi
+
         formatted_date=$(date -d "$date" "+%d / %b / %y")
         tooltip_text=$(date -d "$date" "+%d / %b :: $count")
         
-        weekday_names=("Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat")
         # Fix: Escape \${} to prevent JS interpolation
         weekday_name="\${weekday_names[$weekday]}"
 
-        all_days+=("$date|$weekday|$count|$color|$formatted_date|$weekday_name|$tooltip_text")
+        all_days+=("$date|$weekday|$count|$color|$formatted_date|$weekday_name|$tooltip_text|$level")
     fi
 done <<< "$relevant_days"
 
@@ -353,7 +511,7 @@ first_day_in_week=1
 
 # Fix: Escape \${} to prevent JS interpolation
 for day_data in "\${sorted_days[@]}"; do
-    IFS='|' read -r date weekday count color formatted_date weekday_name tooltip_text <<< "$day_data"
+    IFS='|' read -r date weekday count color formatted_date weekday_name tooltip_text level <<< "$day_data"
     
     if [ "$weekday" == "0" ] && [ "$first_day_in_week" == "0" ]; then
         current_week="$current_week]"
@@ -367,7 +525,7 @@ for day_data in "\${sorted_days[@]}"; do
         first_day_in_week=1
     fi
 
-    day_obj="{\\\"weekday\\\":$weekday,\\\"weekdayName\\\":\\\"$weekday_name\\\",\\\"date\\\":\\\"$formatted_date\\\",\\\"count\\\":$count,\\\"color\\\":\\\"$color\\\",\\\"tooltipText\\\":\\\"$tooltip_text\\\"}"
+    day_obj="{\\\"weekday\\\":$weekday,\\\"weekdayName\\\":\\\"$weekday_name\\\",\\\"date\\\":\\\"$formatted_date\\\",\\\"count\\\":$count,\\\"color\\\":\\\"$color\\\",\\\"level\\\":$level,\\\"tooltipText\\\":\\\"$tooltip_text\\\"}"
 
     if [ "$first_day_in_week" == "1" ]; then
         current_week="$current_week$day_obj"
@@ -397,12 +555,12 @@ pill_count=0
 for (( i=pill_start; i<day_count; i++ )); do
     # Fix: Escape \${} to prevent JS interpolation
     day_data="\${sorted_days[$i]}"
-    IFS='|' read -r date weekday count color formatted_date weekday_name tooltip_text <<< "$day_data"
+    IFS='|' read -r date weekday count color formatted_date weekday_name tooltip_text level <<< "$day_data"
 
     if [ $pill_count -gt 0 ]; then
         pill_json="$pill_json,"
     fi
-    pill_json="$pill_json{\\\"weekday\\\":\\\"$weekday_name\\\",\\\"date\\\":\\\"$formatted_date\\\",\\\"count\\\":$count,\\\"color\\\":\\\"$color\\\",\\\"tooltipText\\\":\\\"$tooltip_text\\\"}"
+    pill_json="$pill_json{\\\"weekday\\\":\\\"$weekday_name\\\",\\\"date\\\":\\\"$formatted_date\\\",\\\"count\\\":$count,\\\"color\\\":\\\"$color\\\",\\\"level\\\":$level,\\\"tooltipText\\\":\\\"$tooltip_text\\\"}"
     pill_count=$((pill_count + 1))
 done
 pill_json="$pill_json]"
@@ -415,7 +573,7 @@ exit 0
     // Bash process
     Process {
         id: githubProcess
-        command: ["/usr/bin/env", "bash", "-c", buildScript()]
+        command: ["/usr/bin/env", "bash", "-c", root.buildScript(root.githubUsername, root.startDay)]
         running: false
 
         stdout: SplitParser {
@@ -449,22 +607,25 @@ exit 0
                             weekday: "---",
                             date: "--/--",
                             count: 0,
-                            color: Theme.surfaceContainer
+                            color: Theme.surfaceContainer,
+                            level: 0
                         })
                     }
 
                     // Trim if more than 7
                     newContributions = newContributions.slice(0, 7)
 
-                    root.contributions = newContributions
+                    root.rawContributions = newContributions
                     root.totalContributions = result.total.toString()
 
                     // Process grid data - ensure 4 weeks with 7 days each
-                    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                    const days = root.startDay === "Monday"
+                        ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                        : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
                     let newGridData = result.gridData || []
 
-                    // Pad to 8 weeks if needed
-                    while (newGridData.length < 8) {
+                    // Pad to 53 weeks if needed
+                    while (newGridData.length < 53) {
                         const emptyWeek = []
                         for (let d = 0; d < 7; d++) {
                             emptyWeek.push({
@@ -472,7 +633,8 @@ exit 0
                                 weekdayName: days[d],
                                 date: "--/--",
                                 count: 0,
-                                color: Theme.surfaceContainer
+                                color: Theme.surfaceContainer,
+                                level: 0
                             })
                         }
                         newGridData.unshift(emptyWeek)
@@ -487,46 +649,23 @@ exit 0
                                 weekdayName: days[missingDay],
                                 date: "--/--",
                                 count: 0,
-                                color: Theme.surfaceContainer
+                                color: Theme.surfaceContainer,
+                                level: 0
                             })
                         }
                     }
 
-                    // Take only last 8 weeks
-                    newGridData = newGridData.slice(-8)
+                    // Take only last 53 weeks
+                    newGridData = newGridData.slice(-53)
 
-                    root.gridData = newGridData
-
+                    root.rawGridData = newGridData
                     // Cache successful fetch persistently
-                    PluginService.savePluginData("githubHeatmapRevive", "cachedTotal", root.totalContributions)
-                    PluginService.savePluginData("githubHeatmapRevive", "cachedGrid", JSON.stringify(root.gridData))
-
-                    // Set default selected day to the most recent one
-                    let nValidDays = []
-                    for (let w = 0; w < newGridData.length; w++) {
-                        for (let d = 0; d < newGridData[w].length; d++) {
-                            if (newGridData[w][d].date !== "--/--") {
-                                nValidDays.push(newGridData[w][d])
-                            }
-                        }
-                    }
-                    if (nValidDays.length > 0) {
-                        root.todayDay = nValidDays[nValidDays.length - 1]
-                        if (nValidDays.length > 1) {
-                            root.yesterdayDay = nValidDays[nValidDays.length - 2]
-                        }
-                    } else if (newGridData.length > 0) {
-                        const lastWeek = newGridData[newGridData.length - 1]
-                        root.todayDay = lastWeek[lastWeek.length - 1]
-                        if (lastWeek.length > 1) {
-                            root.yesterdayDay = lastWeek[lastWeek.length - 2]
-                        } else if (newGridData.length > 1) {
-                            const prevWeek = newGridData[newGridData.length - 2]
-                            root.yesterdayDay = prevWeek[prevWeek.length - 1]
-                        }
-                    }
-                    root.selectedDay = root.todayDay
-
+                    root.lastRefreshTime = Date.now()
+                    SettingsData.setPluginSetting(root.pluginId, "cachedTotal", root.totalContributions)
+                    SettingsData.setPluginSetting(root.pluginId, "cachedGrid", JSON.stringify(root.rawGridData))
+                    SettingsData.setPluginSetting(root.pluginId, "cachedStartDay", root.startDay)
+                    SettingsData.setPluginSetting(root.pluginId, "lastRefreshTime", root.lastRefreshTime.toString())
+                    
                     if (root.isManualRefresh && root.showNotifications) {
                         notifySuccess.running = true
                     }
@@ -589,8 +728,8 @@ exit 0
                     radius: 2
                     color: index < root.contributions.length
                            ? root.contributions[index].color
-                           : Theme.surfaceContainer
-                    border.color: Qt.darker(color, 1.2)
+                           : root.levelToColor(0)
+                    border.color: Theme.withAlpha(Theme.outline, 0.3)
                     border.width: 1
                     opacity: root.isLoading ? 0.6 : 1.0
 
@@ -620,8 +759,8 @@ exit 0
                     radius: 2
                     color: index < root.contributions.length
                            ? root.contributions[index].color
-                           : Theme.surfaceContainer
-                    border.color: Qt.darker(color, 1.2)
+                           : root.levelToColor(0)
+                    border.color: Theme.withAlpha(Theme.outline, 0.3)
                     border.width: 1
                     opacity: root.isLoading ? 0.6 : 1.0
 
@@ -638,14 +777,14 @@ exit 0
     }
 
     // Popout position persistence
-    property int popoutX: (pluginData && pluginData.popoutX) ? pluginData.popoutX : -1
-    property int popoutY: (pluginData && pluginData.popoutY) ? pluginData.popoutY : -1
+    property int popoutX: -1
+    property int popoutY: -1
 
     function savePopoutPosition(x, y) {
-        PluginService.savePluginData("githubHeatmapRevive", "popoutX", x)
-        PluginService.savePluginData("githubHeatmapRevive", "popoutY", y)
-        PluginService.setGlobalVar("githubHeatmapRevive", "popoutX", x)
-        PluginService.setGlobalVar("githubHeatmapRevive", "popoutY", y)
+        SettingsData.setPluginSetting(root.pluginId, "popoutX", x)
+        SettingsData.setPluginSetting(root.pluginId, "popoutY", y)
+        PluginService.setGlobalVar(root.pluginId, "popoutX", x)
+        PluginService.setGlobalVar(root.pluginId, "popoutY", y)
     }
 
     // --- Popout Content ---
@@ -764,7 +903,7 @@ exit 0
                         StyledText {
                             id: contributionStatusText
                             Layout.fillWidth: true
-                            text: root.isError ? "Connection Error" : (root.isLoading ? "Syncing..." : root.totalContributions + " contributions")
+                            text: root.isError ? "Connection Error" : (root.isLoading ? "Syncing..." : root.visibleContributions + " contributions")
                             font.pixelSize: Theme.fontSizeSmall - 1
                             color: Theme.primary
                             opacity: 0.8
@@ -812,13 +951,15 @@ exit 0
                         }
 
                         Rectangle {
+                            id: refreshBg
                             anchors.fill: parent
-                            radius: Theme.cornerRadius
+                            radius: refreshArea.pressed ? (width / 2) : Theme.cornerRadius
                             color: refreshArea.pressed ? Theme.withAlpha(Theme.primary, 0.18) : (refreshArea.containsMouse ? Theme.withAlpha(Theme.primary, 0.10) : Theme.withAlpha(Theme.secondary, 0.04))
                             border.width: 1
                             border.color: refreshArea.pressed ? Theme.withAlpha(Theme.primary, 0.60) : (refreshArea.containsMouse ? Theme.withAlpha(Theme.primary, 0.40) : Theme.withAlpha(Theme.secondary, 0.15))
                             Behavior on color { ColorAnimation { duration: 150 } }
                             Behavior on border.color { ColorAnimation { duration: 150 } }
+                            Behavior on radius { NumberAnimation { duration: 150 } }
                         }
 
                         DankIcon {
@@ -852,7 +993,7 @@ exit 0
                         DankRipple {
                             id: refreshRipple
                             rippleColor: Theme.surfaceText
-                            cornerRadius: Theme.cornerRadius
+                            cornerRadius: refreshBg.radius
                             anchors.fill: parent
                         }
                     }
@@ -886,30 +1027,53 @@ exit 0
                 id: gridContainer
                 width: parent.width
                 anchors.horizontalCenter: parent.horizontalCenter
-                height: 240
+                height: {
+                    if (root.displayMode === "Week") return 90
+                    return 240
+                }
                 radius: Theme.cornerRadius
                 color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
                 border.width: 1
                 border.color: Theme.withAlpha(Theme.primary, 0.15)
                 visible: !root.isError
 
-                    // Detect when the mouse leaves the entire grid area to reset to "today"
-                    HoverHandler {
-                        id: gridHover
-                        onHoveredChanged: if (!hovered) root.selectedDay = root.todayDay
+                HoverHandler {
+                    id: gridHover
+                    onHoveredChanged: if (!hovered) root.selectedDay = root.todayDay
+                }
+
+                Flickable {
+                    id: flickable
+                    anchors.fill: parent
+                    anchors.margins: Theme.spacingM
+                    contentWidth: gridRowLayout.width
+                    contentHeight: gridRowLayout.height
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    ScrollBar.horizontal: ScrollBar { 
+                        visible: flickable.contentWidth > flickable.width 
+                    }
+
+                    onContentWidthChanged: {
+                        if (contentWidth > width) {
+                            contentX = contentWidth - width
+                        }
                     }
 
                     Row {
-                        anchors.centerIn: parent
-                        spacing: 8
-
-                        // Day labels
+                        id: gridRowLayout
+                        y: Math.max(0, (flickable.height - height) / 2)
+                        x: Math.max(0, (flickable.width - width) / 2)
+                        spacing: root.displayMode === "Month" ? 16 : 4
+                        
+                        // 1) VERTICAL DAY LABELS (For Month, 2 Month, Year)
                         Column {
+                            visible: root.displayMode !== "Week" && !root.hideDaysInitials
                             spacing: 4
                             topPadding: 4
-
                             Repeater {
-                                model: ["S", "M", "T", "W", "T", "F", "S"]
+                                model: root.startDay === "Monday" ? ["M", "T", "W", "T", "F", "S", "S"] : ["S", "M", "T", "W", "T", "F", "S"]
                                 StyledText {
                                     text: modelData
                                     font.pixelSize: 10
@@ -922,11 +1086,17 @@ exit 0
                             }
                         }
 
-                        // Grid
+                        // 2) GRID for Month, 2 Month, Year
                         Row {
-                            spacing: 4
+                            visible: root.displayMode !== "Week"
+                            spacing: root.displayMode === "Month" ? 16 : 4
                             Repeater {
-                                model: root.gridData
+                                model: {
+                                    if (root.displayMode === "Month") return root.gridData.slice(-5)
+                                    if (root.displayMode === "2 Month") return root.gridData.slice(-9)
+                                    if (root.displayMode === "Year") return root.gridData.slice(-53)
+                                    return []
+                                }
                                 Column {
                                     spacing: 4
                                     required property var modelData
@@ -935,10 +1105,10 @@ exit 0
                                         Rectangle {
                                             width: 26
                                             height: 26
-                                            radius: root.selectedDay === modelData ? 13 : 4
+                                            radius: root.selectedDay === modelData ? (width/2) : 4
                                             Behavior on radius { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                            color: modelData.color || Theme.surfaceContainer
-                                            border.color: root.selectedDay === modelData ? Theme.primary : Qt.darker(color, 1.15)
+                                            color: modelData.color || root.levelToColor(0)
+                                            border.color: root.selectedDay === modelData ? Theme.primary : Theme.withAlpha(Theme.outline, 0.3)
                                             border.width: root.selectedDay === modelData ? 2 : 1
                                             required property var modelData
                                             opacity: root.isLoading ? 0.6 : 1.0
@@ -946,7 +1116,6 @@ exit 0
                                             Behavior on color { ColorAnimation { duration: 150 } }
 
                                             MouseArea {
-                                                id: cellMouse
                                                 anchors.fill: parent
                                                 hoverEnabled: true
                                                 onEntered: root.selectedDay = modelData
@@ -956,8 +1125,55 @@ exit 0
                                 }
                             }
                         }
+
+                        // 3) HORIZONTAL WEEK for "Week"
+                        Row {
+                            visible: root.displayMode === "Week"
+                            spacing: 12
+                            Repeater {
+                                model: {
+                                    if (root.displayMode === "Week" && root.gridData.length > 0) {
+                                        return root.gridData[root.gridData.length - 1]
+                                    }
+                                    return []
+                                }
+                                Column {
+                                    spacing: 8
+                                    required property var modelData
+                                    
+                                    StyledText {
+                                        visible: !root.hideDaysInitials
+                                        text: modelData.weekdayName ? modelData.weekdayName.charAt(0) : ""
+                                        font.pixelSize: 10
+                                        color: Theme.surfaceVariantText
+                                        width: 26
+                                        horizontalAlignment: Text.AlignHCenter
+                                    }
+
+                                    Rectangle {
+                                        width: 26
+                                        height: 26
+                                        radius: root.selectedDay === modelData ? 13 : 4
+                                        Behavior on radius { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                        color: modelData.color || root.levelToColor(0)
+                                        border.color: root.selectedDay === modelData ? Theme.primary : Theme.withAlpha(Theme.outline, 0.3)
+                                        border.width: root.selectedDay === modelData ? 2 : 1
+                                        opacity: root.isLoading ? 0.6 : 1.0
+                                        Behavior on opacity { NumberAnimation { duration: 150 } }
+                                        Behavior on color { ColorAnimation { duration: 150 } }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            onEntered: root.selectedDay = modelData
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
+            }
 
                 // Contribution detail card
                 StyledRect {
@@ -967,11 +1183,9 @@ exit 0
                     radius: Theme.cornerRadius
                     color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
                     border.width: 1
-                    border.color: root.selectedDay ? Qt.rgba(root.selectedDay.color.r, root.selectedDay.color.g, root.selectedDay.color.b, 0.4) : Theme.withAlpha(Theme.primary, 0.15)
+                    border.color: Theme.withAlpha(Theme.primary, 0.15)
                     visible: root.selectedDay !== null && !root.isError
                     clip: true
-
-                    Behavior on border.color { ColorAnimation { duration: 150 } }
 
                     Row {
                         anchors.fill: parent
@@ -988,7 +1202,7 @@ exit 0
                                 text: root.selectedDay ? root.selectedDay.count : "0"
                                 font.pixelSize: 32
                                 font.bold: true
-                                color: root.selectedDay ? root.selectedDay.color : Theme.surfaceText
+                                color: Theme.surfaceText
                                 anchors.horizontalCenter: parent.horizontalCenter
                             }
 
