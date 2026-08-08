@@ -23,9 +23,7 @@
   "distro": [
     "any"
   ],
-  "dependencies": [
-    "dms"
-  ],
+  "dependencies": [],
   "screenshot": "https://raw.githubusercontent.com/JDKamalakar/DMS-GitHub_HeatMap/refs/heads/main/assets/POP_Up-UI.png",
   "permissions": [
     "settings_read",
