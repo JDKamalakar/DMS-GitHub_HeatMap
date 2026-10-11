@@ -10,6 +10,9 @@ PluginSettings {
     id: root
     pluginId: "githubHeatmapRevive"
 
+    readonly property real outerR: Theme.cornerRadius || 12
+    readonly property real innerR: 4
+
     PluginGlobalVar {
         id: usernameSetting
         varName: "username"
@@ -105,8 +108,8 @@ PluginSettings {
             return root.currentDesktopOpacity !== root.savedDesktopOpacity ||
                    root.currentDesktopSquareSize !== root.savedDesktopSquareSize ||
                    root.currentDesktopSquareSpacing !== root.savedDesktopSquareSpacing ||
-                   (desktopDisplayModeCombo ? desktopDisplayModeCombo.currentText !== root.savedDesktopDisplayMode : false) ||
-                   (desktopStartDayCombo ? desktopStartDayCombo.currentText !== root.savedDesktopStartDay : false) ||
+                   (desktopDisplayModeCombo ? (desktopDisplayModeCombo.currentValue || desktopDisplayModeCombo.currentText) !== root.savedDesktopDisplayMode : false) ||
+                   (desktopStartDayCombo ? (desktopStartDayCombo.currentValue || desktopStartDayCombo.currentText) !== root.savedDesktopStartDay : false) ||
                    (desktopHideDaysToggle ? desktopHideDaysToggle.checked !== root.savedDesktopHideDays : false) ||
                    (desktopFollowThemeToggle ? desktopFollowThemeToggle.checked !== root.savedDesktopFollowTheme : false)
         } else {
@@ -114,8 +117,8 @@ PluginSettings {
                    (parseInt(root.currentInterval) || 300) !== root.savedInterval ||
                    (notifyToggle ? notifyToggle.checked !== root.savedNotify : false) ||
                    (themeColorToggle ? themeColorToggle.checked !== root.savedFollowTheme : false) ||
-                   (displayModeCombo ? displayModeCombo.currentText !== root.savedDisplayMode : false) ||
-                   (startDayCombo ? startDayCombo.currentText !== root.savedStartDay : false) ||
+                   (displayModeCombo ? (displayModeCombo.currentValue || displayModeCombo.currentText) !== root.savedDisplayMode : false) ||
+                   (startDayCombo ? (startDayCombo.currentValue || startDayCombo.currentText) !== root.savedStartDay : false) ||
                    (hideDaysToggle ? hideDaysToggle.checked !== root.savedHideDays : false)
         }
     }
@@ -183,46 +186,22 @@ PluginSettings {
         if (themeColorToggle) themeColorToggle.checked = savedFollowThemeBool
 
         if (displayModeCombo) {
-            if (savedDisplayModeVal === "Month") {
-                displayModeCombo.currentIndex = 1
-            } else if (savedDisplayModeVal === "2 Month") {
-                displayModeCombo.currentIndex = 2
-            } else if (savedDisplayModeVal === "Year") {
-                displayModeCombo.currentIndex = 3
-            } else {
-                displayModeCombo.currentIndex = 0
-            }
+            displayModeCombo.currentValue = savedDisplayModeVal
         }
 
         if (startDayCombo) {
-            if (savedStartDayVal === "Monday") {
-                startDayCombo.currentIndex = 1
-            } else {
-                startDayCombo.currentIndex = 0
-            }
+            startDayCombo.currentValue = savedStartDayVal
         }
 
         if (hideDaysToggle) hideDaysToggle.checked = savedHideDaysBool
 
         // Desktop specific combos/toggles
         if (desktopDisplayModeCombo) {
-            if (savedDesktopDisplayModeVal === "Month") {
-                desktopDisplayModeCombo.currentIndex = 1
-            } else if (savedDesktopDisplayModeVal === "2 Month") {
-                desktopDisplayModeCombo.currentIndex = 2
-            } else if (savedDesktopDisplayModeVal === "Year") {
-                desktopDisplayModeCombo.currentIndex = 3
-            } else {
-                desktopDisplayModeCombo.currentIndex = 0
-            }
+            desktopDisplayModeCombo.currentValue = savedDesktopDisplayModeVal
         }
 
         if (desktopStartDayCombo) {
-            if (savedDesktopStartDayVal === "Monday") {
-                desktopStartDayCombo.currentIndex = 1
-            } else {
-                desktopStartDayCombo.currentIndex = 0
-            }
+            desktopStartDayCombo.currentValue = savedDesktopStartDayVal
         }
 
         if (desktopHideDaysToggle) {
@@ -242,465 +221,558 @@ PluginSettings {
         refreshProperties()
     }
 
-    Component {
-        id: settingsCardTemplate
-        Rectangle {
-            width: parent ? parent.width : 0
-            height: Math.max(0, contentCol.implicitHeight + Theme.spacingM * 2)
-            color: Theme.surfaceContainer
-            radius: Theme.cornerRadius
-            border.color: Theme.outline
-            border.width: 1
-
-            property string iconName
-            property string titleText
-            property string subtitleText
-            property Component controlContent
-
-            Column {
-                id: contentCol
-                anchors.fill: parent
-                anchors.margins: Theme.spacingM
-                spacing: Theme.spacingM
-
-                Row {
-                    width: parent.width
-                    spacing: Theme.spacingM
-                    DankIcon { id: cardIcon; name: iconName; size: 22; anchors.verticalCenter: parent.verticalCenter; opacity: 0.8 }
-                    Column {
-                        width: Math.max(0, parent.width - cardIcon.width - Theme.spacingM)
-                        spacing: Theme.spacingXXS
-                        StyledText {
-                            text: titleText
-                            font.pixelSize: Theme.fontSizeMedium
-                            font.weight: Font.Medium
-                            color: Theme.surfaceText
-                        }
-                        StyledText {
-                            text: subtitleText
-                            font.pixelSize: Theme.fontSizeSmall
-                            color: Theme.surfaceVariantText
-                            width: parent.width
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-                }
-
-                Loader {
-                    id: cardContent
-                    width: parent.width
-                    sourceComponent: controlContent
-                    asynchronous: true
-                }
-            }
-        }
-    }
-
     Column {
+        id: mainSettingsCol
         width: parent.width
         spacing: Theme.spacingL
 
-        // --- Global Settings Section (Plugin Settings) ---
+        // ========================================================
+        // 1. GLOBAL SETTINGS (Bar Widget & Plugin Preferences)
+        // ========================================================
         Column {
             width: parent.width
             spacing: Theme.spacingL
             visible: !root.isInstanceSettings
 
-            // --- Account Section ---
-            Loader {
+            // --- Section: Account & Source ---
+            Column {
                 width: parent.width
-                asynchronous: true
-                sourceComponent: settingsCardTemplate
-                onLoaded: {
-                    item.iconName = "person"
-                    item.titleText = "GitHub Identity"
-                    item.subtitleText = "Your GitHub username used to fetch public contribution data."
-                    item.controlContent = accountControlComponent
-                }
-            }
+                spacing: Theme.spacingS
 
-            Component {
-                id: accountControlComponent
-                DankTextField {
-                    width: parent ? parent.width : 0
-                    placeholderText: "e.g. josh-overton"
-                    text: root.currentUsername
-                    onTextChanged: {
-                        if (root.currentUsername !== text) {
-                            root.currentUsername = text
-                        }
-                    }
-                }
-            }
-
-            // --- Performance Section ---
-            Loader {
-                width: parent.width
-                asynchronous: true
-                sourceComponent: settingsCardTemplate
-                onLoaded: {
-                    item.iconName = "schedule"
-                    item.titleText = "Refresh Rate"
-                    item.subtitleText = "Frequency of updates in seconds. Higher values save battery."
-                    item.controlContent = perfControlComponent
-                }
-            }
-
-            Component {
-                id: perfControlComponent
-                DankTextField {
-                    width: parent ? parent.width : 0
-                    placeholderText: "300 (5 minutes)"
-                    text: root.currentInterval
-                    onTextChanged: {
-                        if (root.currentInterval !== text) {
-                            root.currentInterval = text
-                        }
-                    }
-                    validator: IntValidator { bottom: 60; top: 86400 }
-                }
-            }
-
-            // --- Notification Section ---
-            Rectangle {
-                width: parent.width
-                height: Math.max(0, notifyRow.implicitHeight + Theme.spacingM * 2)
-                color: Theme.surfaceContainer
-                radius: Theme.cornerRadius
-                border.color: Theme.outline
-                border.width: 1
-                opacity: 0.8
-
-                RowLayout {
-                    id: notifyRow
-                    anchors.fill: parent
-                    anchors.margins: Theme.spacingM
-                    spacing: Theme.spacingM
-
+                Row {
+                    spacing: Theme.spacingXS
+                    leftPadding: Theme.spacingM
                     DankIcon {
-                        name: "notifications"
-                        size: 22
-                        opacity: 0.8
-                        Layout.alignment: Qt.AlignVCenter
+                        name: "person"
+                        size: 16
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    StyledText {
+                        text: "Account & Source"
+                        font.pixelSize: Theme.fontSizeSmall
+                        font.weight: Font.DemiBold
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                Column {
+                    width: parent.width
+                    spacing: 2
+
+                    // Segment: GitHub Username
+                    Rectangle {
+                        width: parent.width
+                        implicitHeight: accountContentRow.implicitHeight + Theme.spacingM * 2
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
+
+                        topLeftRadius: root.outerR
+                        topRightRadius: root.outerR
+                        bottomLeftRadius: root.innerR
+                        bottomRightRadius: root.innerR
+
+                        RowLayout {
+                            id: accountContentRow
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingM
+                            anchors.rightMargin: Theme.spacingM
+                            spacing: Theme.spacingM
+
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                                Layout.alignment: Qt.AlignVCenter
+
+                                DankIcon {
+                                    name: "alternate_email"
+                                    size: 18
+                                    color: Theme.primary
+                                    anchors.centerIn: parent
+                                }
+                            }
+
+                            Column {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                StyledText {
+                                    text: "GitHub Username"
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+                                StyledText {
+                                    text: "Public profile used to fetch contribution calendar data"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            DankTextField {
+                                id: usernameInput
+                                Layout.preferredWidth: Math.min(220, parent.width * 0.4)
+                                Layout.alignment: Qt.AlignVCenter
+                                placeholderText: "e.g. JDKamalakar"
+                                text: root.currentUsername
+                                onTextChanged: {
+                                    if (root.currentUsername !== text) {
+                                        root.currentUsername = text
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacingXXS
-                        StyledText {
-                            text: "System Alerts"
-                            font.pixelSize: Theme.fontSizeMedium
-                            font.weight: Font.Medium
-                            color: Theme.surfaceText
-                        }
-                        StyledText {
-                            text: "Show desktop notifications for sync status."
-                            font.pixelSize: Theme.fontSizeSmall
-                            color: Theme.surfaceVariantText
-                            Layout.fillWidth: true
-                            wrapMode: Text.WordWrap
-                        }
-                    }
+                    // Segment: Refresh Interval
+                    Rectangle {
+                        width: parent.width
+                        implicitHeight: refreshContentRow.implicitHeight + Theme.spacingM * 2
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                    DankToggle {
-                        id: notifyToggle
-                        Layout.alignment: Qt.AlignVCenter
-                        checked: true
-                        onClicked: {
-                            checked = !checked
+                        topLeftRadius: root.innerR
+                        topRightRadius: root.innerR
+                        bottomLeftRadius: root.outerR
+                        bottomRightRadius: root.outerR
+
+                        RowLayout {
+                            id: refreshContentRow
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingM
+                            anchors.rightMargin: Theme.spacingM
+                            spacing: Theme.spacingM
+
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                                Layout.alignment: Qt.AlignVCenter
+
+                                DankIcon {
+                                    name: "schedule"
+                                    size: 18
+                                    color: Theme.primary
+                                    anchors.centerIn: parent
+                                }
+                            }
+
+                            Column {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                StyledText {
+                                    text: "Refresh Rate"
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+                                StyledText {
+                                    text: "Update interval in seconds (minimum 60s, default 300s)"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            DankTextField {
+                                id: intervalInput
+                                Layout.preferredWidth: Math.min(130, parent.width * 0.3)
+                                Layout.alignment: Qt.AlignVCenter
+                                placeholderText: "300"
+                                text: root.currentInterval
+                                onTextChanged: {
+                                    if (root.currentInterval !== text) {
+                                        root.currentInterval = text
+                                    }
+                                }
+                                validator: IntValidator { bottom: 60; top: 86400 }
+                            }
                         }
                     }
                 }
             }
 
-            // --- Appearance Section ---
-            Rectangle {
+            // --- Section: General Preferences ---
+            Column {
                 width: parent.width
-                height: Math.max(0, themeRow.implicitHeight + Theme.spacingM * 2)
-                color: Theme.surfaceContainer
-                radius: Theme.cornerRadius
-                border.color: Theme.outline
-                border.width: 1
-                opacity: 0.8
+                spacing: Theme.spacingS
 
-                RowLayout {
-                    id: themeRow
-                    anchors.fill: parent
-                    anchors.margins: Theme.spacingM
-                    spacing: Theme.spacingM
-
+                Row {
+                    spacing: Theme.spacingXS
+                    leftPadding: Theme.spacingM
                     DankIcon {
-                        name: "palette"
-                        size: 22
-                        opacity: 0.8
-                        Layout.alignment: Qt.AlignVCenter
+                        name: "tune"
+                        size: 16
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    StyledText {
+                        text: "General Preferences"
+                        font.pixelSize: Theme.fontSizeSmall
+                        font.weight: Font.DemiBold
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                Column {
+                    width: parent.width
+                    spacing: 2
+
+                    // Segment 1: System Alerts / Notifications Toggle
+                    Rectangle {
+                        width: parent.width
+                        height: 56
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
+
+                        topLeftRadius: root.outerR
+                        topRightRadius: root.outerR
+                        bottomLeftRadius: root.innerR
+                        bottomRightRadius: root.innerR
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingM
+                            anchors.rightMargin: Theme.spacingM
+                            spacing: Theme.spacingM
+
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: notifyToggle.checked ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15) : Qt.rgba(Theme.surfaceContainerHighest.r, Theme.surfaceContainerHighest.g, Theme.surfaceContainerHighest.b, 0.5)
+                                Layout.alignment: Qt.AlignVCenter
+                                Behavior on color { ColorAnimation { duration: 150 } }
+
+                                DankIcon {
+                                    name: "notifications"
+                                    size: 18
+                                    color: notifyToggle.checked ? Theme.primary : Theme.surfaceVariantText
+                                    anchors.centerIn: parent
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                }
+                            }
+
+                            Column {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                StyledText {
+                                    text: "System Alerts"
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+                                StyledText {
+                                    text: "Show desktop notifications for refresh and sync status"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            DankToggle {
+                                id: notifyToggle
+                                Layout.alignment: Qt.AlignVCenter
+                                checked: true
+                                onClicked: {
+                                    checked = !checked
+                                }
+                            }
+                        }
                     }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacingXXS
-                        StyledText {
-                            text: "Follow DMS Theme Color"
-                            font.pixelSize: Theme.fontSizeMedium
-                            font.weight: Font.Medium
-                            color: Theme.surfaceText
-                        }
-                        StyledText {
-                            text: "Use your DMS accent color for the heatmap instead of the classic GitHub green."
-                            font.pixelSize: Theme.fontSizeSmall
-                            color: Theme.surfaceVariantText
-                            Layout.fillWidth: true
-                            wrapMode: Text.WordWrap
-                        }
-                    }
+                    // Segment 2: Follow DMS Theme Color Toggle
+                    Rectangle {
+                        width: parent.width
+                        height: 56
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                    DankToggle {
-                        id: themeColorToggle
-                        Layout.alignment: Qt.AlignVCenter
-                        checked: true
-                        onClicked: {
-                            checked = !checked
+                        topLeftRadius: root.innerR
+                        topRightRadius: root.innerR
+                        bottomLeftRadius: root.outerR
+                        bottomRightRadius: root.outerR
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingM
+                            anchors.rightMargin: Theme.spacingM
+                            spacing: Theme.spacingM
+
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: themeColorToggle.checked ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15) : Qt.rgba(Theme.surfaceContainerHighest.r, Theme.surfaceContainerHighest.g, Theme.surfaceContainerHighest.b, 0.5)
+                                Layout.alignment: Qt.AlignVCenter
+                                Behavior on color { ColorAnimation { duration: 150 } }
+
+                                DankIcon {
+                                    name: "palette"
+                                    size: 18
+                                    color: themeColorToggle.checked ? Theme.primary : Theme.surfaceVariantText
+                                    anchors.centerIn: parent
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                }
+                            }
+
+                            Column {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                StyledText {
+                                    text: "Follow DMS Theme Color"
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+                                StyledText {
+                                    text: "Use active DMS accent palette instead of classic GitHub green"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            DankToggle {
+                                id: themeColorToggle
+                                Layout.alignment: Qt.AlignVCenter
+                                checked: true
+                                onClicked: {
+                                    checked = !checked
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // --- Display Configuration ---
-            Rectangle {
+            // --- Section: Bar Heatmap Display ---
+            Column {
                 width: parent.width
-                height: Math.max(0, displayModeCol.implicitHeight + Theme.spacingM * 2)
-                color: Theme.surfaceContainer
-                radius: Theme.cornerRadius
-                border.color: Theme.outline
-                border.width: 1
-                opacity: 0.8
+                spacing: Theme.spacingS
 
-                ColumnLayout {
-                    id: displayModeCol
-                    anchors.fill: parent
-                    anchors.margins: Theme.spacingM
-                    spacing: Theme.spacingS
+                Row {
+                    spacing: Theme.spacingXS
+                    leftPadding: Theme.spacingM
+                    DankIcon {
+                        name: "dashboard_customize"
+                        size: 16
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    StyledText {
+                        text: "Bar Heatmap Display"
+                        font.pixelSize: Theme.fontSizeSmall
+                        font.weight: Font.DemiBold
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
 
-                    // Display Mode Dropdown
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacingM
+                Column {
+                    width: parent.width
+                    spacing: 2
 
-                        DankIcon {
-                            name: "grid_view"
-                            size: 22
-                            opacity: 0.8
-                            Layout.alignment: Qt.AlignVCenter
-                        }
+                    // Segment 1: Display Mode Dropdown
+                    Rectangle {
+                        width: parent.width
+                        implicitHeight: barDisplayModeRow.implicitHeight + Theme.spacingM * 2
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: Theme.spacingXXS
-                            StyledText {
-                                text: "Display Mode"
-                                font.pixelSize: Theme.fontSizeMedium
-                                font.weight: Font.Medium
-                                color: Theme.surfaceText
+                        topLeftRadius: root.outerR
+                        topRightRadius: root.outerR
+                        bottomLeftRadius: root.innerR
+                        bottomRightRadius: root.innerR
+
+                        RowLayout {
+                            id: barDisplayModeRow
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingM
+                            anchors.rightMargin: Theme.spacingM
+                            spacing: Theme.spacingM
+
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                                Layout.alignment: Qt.AlignVCenter
+
+                                DankIcon {
+                                    name: "grid_view"
+                                    size: 18
+                                    color: Theme.primary
+                                    anchors.centerIn: parent
+                                }
                             }
-                            StyledText {
-                                text: "Configure how much historical contribution data to show."
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: Theme.surfaceVariantText
+
+                            Column {
                                 Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                StyledText {
+                                    text: "Display Mode"
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+                                StyledText {
+                                    text: "Range of historical contribution data shown in popup"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            DankDropdown {
+                                id: displayModeCombo
+                                Layout.preferredWidth: Math.min(180, parent.width * 0.4)
+                                Layout.alignment: Qt.AlignVCenter
+                                options: ["Week", "Month", "2 Month", "Year"]
+                                currentValue: root.savedDisplayMode
                             }
                         }
                     }
 
-                    ComboBox {
-                        id: displayModeCombo
-                        Layout.fillWidth: true
-                        model: ["Week", "Month", "2 Month", "Year"]
+                    // Segment 2: Start Day Dropdown
+                    Rectangle {
+                        width: parent.width
+                        implicitHeight: barStartDayRow.implicitHeight + Theme.spacingM * 2
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                        delegate: ItemDelegate {
-                            width: displayModeCombo.width
-                            contentItem: StyledText {
-                                text: modelData
-                                color: highlighted ? Theme.primary : Theme.surfaceText
-                                font.pixelSize: Theme.fontSizeMedium
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            background: Rectangle {
-                                color: highlighted ? Theme.withAlpha(Theme.primary, 0.1) : "transparent"
-                            }
-                        }
+                        topLeftRadius: root.innerR
+                        topRightRadius: root.innerR
+                        bottomLeftRadius: root.innerR
+                        bottomRightRadius: root.innerR
 
-                        contentItem: StyledText {
-                            leftPadding: Theme.spacingS
-                            rightPadding: displayModeCombo.indicator.width + displayModeCombo.spacing
-                            text: displayModeCombo.displayText
-                            color: Theme.surfaceText
-                            font.pixelSize: Theme.fontSizeMedium
-                            verticalAlignment: Text.AlignVCenter
-                        }
+                        RowLayout {
+                            id: barStartDayRow
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingM
+                            anchors.rightMargin: Theme.spacingM
+                            spacing: Theme.spacingM
 
-                        background: Rectangle {
-                            implicitWidth: 120
-                            implicitHeight: 40
-                            border.color: displayModeCombo.pressed ? Theme.primary : Theme.withAlpha(Theme.outline, 0.5)
-                            border.width: displayModeCombo.visualFocus ? 2 : 1
-                            color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                            radius: Theme.cornerRadius
-                        }
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                                Layout.alignment: Qt.AlignVCenter
 
-                        popup: Popup {
-                            y: displayModeCombo.height + 2
-                            width: displayModeCombo.width
-                            implicitHeight: contentItem.implicitHeight
-                            padding: 1
-
-                            contentItem: ListView {
-                                clip: true
-                                implicitHeight: contentHeight
-                                model: displayModeCombo.popup.visible ? displayModeCombo.delegateModel : null
-                                currentIndex: displayModeCombo.highlightedIndex
-
-                                ScrollIndicator.vertical: ScrollIndicator { }
+                                DankIcon {
+                                    name: "calendar_today"
+                                    size: 18
+                                    color: Theme.primary
+                                    anchors.centerIn: parent
+                                }
                             }
 
-                            background: Rectangle {
-                                color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                                border.color: Theme.withAlpha(Theme.outline, 0.5)
-                                border.width: 1
-                                radius: Theme.cornerRadius
-                            }
-                        }
-                    }
-
-                    // Start Day Dropdown
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacingM
-                        Layout.topMargin: Theme.spacingS
-
-                        DankIcon {
-                            name: "calendar_today"
-                            size: 22
-                            opacity: 0.8
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: Theme.spacingXXS
-                            StyledText {
-                                text: "Start Day"
-                                font.pixelSize: Theme.fontSizeMedium
-                                font.weight: Font.Medium
-                                color: Theme.surfaceText
-                            }
-                            StyledText {
-                                text: "Select the starting weekday of the contribution week grid."
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: Theme.surfaceVariantText
+                            Column {
                                 Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                StyledText {
+                                    text: "Start Day"
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+                                StyledText {
+                                    text: "First weekday of each week column in the calendar"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            DankDropdown {
+                                id: startDayCombo
+                                Layout.preferredWidth: Math.min(180, parent.width * 0.4)
+                                Layout.alignment: Qt.AlignVCenter
+                                options: ["Sunday", "Monday"]
+                                currentValue: root.savedStartDay
                             }
                         }
                     }
 
-                    ComboBox {
-                        id: startDayCombo
-                        Layout.fillWidth: true
-                        model: ["Sunday", "Monday"]
+                    // Segment 3: Hide Days Initials Toggle
+                    Rectangle {
+                        width: parent.width
+                        height: 56
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                        delegate: ItemDelegate {
-                            width: startDayCombo.width
-                            contentItem: StyledText {
-                                text: modelData
-                                color: highlighted ? Theme.primary : Theme.surfaceText
-                                font.pixelSize: Theme.fontSizeMedium
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            background: Rectangle {
-                                color: highlighted ? Theme.withAlpha(Theme.primary, 0.1) : "transparent"
-                            }
-                        }
+                        topLeftRadius: root.innerR
+                        topRightRadius: root.innerR
+                        bottomLeftRadius: root.outerR
+                        bottomRightRadius: root.outerR
 
-                        contentItem: StyledText {
-                            leftPadding: Theme.spacingS
-                            rightPadding: startDayCombo.indicator.width + startDayCombo.spacing
-                            text: startDayCombo.displayText
-                            color: Theme.surfaceText
-                            font.pixelSize: Theme.fontSizeMedium
-                            verticalAlignment: Text.AlignVCenter
-                        }
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingM
+                            anchors.rightMargin: Theme.spacingM
+                            spacing: Theme.spacingM
 
-                        background: Rectangle {
-                            implicitWidth: 120
-                            implicitHeight: 40
-                            border.color: startDayCombo.pressed ? Theme.primary : Theme.withAlpha(Theme.outline, 0.5)
-                            border.width: startDayCombo.visualFocus ? 2 : 1
-                            color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                            radius: Theme.cornerRadius
-                        }
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: hideDaysToggle.checked ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15) : Qt.rgba(Theme.surfaceContainerHighest.r, Theme.surfaceContainerHighest.g, Theme.surfaceContainerHighest.b, 0.5)
+                                Layout.alignment: Qt.AlignVCenter
+                                Behavior on color { ColorAnimation { duration: 150 } }
 
-                        popup: Popup {
-                            y: startDayCombo.height + 2
-                            width: startDayCombo.width
-                            implicitHeight: contentItem.implicitHeight
-                            padding: 1
-
-                            contentItem: ListView {
-                                clip: true
-                                implicitHeight: contentHeight
-                                model: startDayCombo.popup.visible ? startDayCombo.delegateModel : null
-                                currentIndex: startDayCombo.highlightedIndex
-
-                                ScrollIndicator.vertical: ScrollIndicator { }
+                                DankIcon {
+                                    name: "visibility_off"
+                                    size: 18
+                                    color: hideDaysToggle.checked ? Theme.primary : Theme.surfaceVariantText
+                                    anchors.centerIn: parent
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                }
                             }
 
-                            background: Rectangle {
-                                color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                                border.color: Theme.withAlpha(Theme.outline, 0.5)
-                                border.width: 1
-                                radius: Theme.cornerRadius
-                            }
-                        }
-                    }
-
-                    // Hide Days Initials Toggle
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacingM
-                        Layout.topMargin: Theme.spacingS
-
-                        DankIcon {
-                            name: "visibility_off"
-                            size: 22
-                            opacity: 0.8
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: Theme.spacingXXS
-                            StyledText {
-                                text: "Hide Days Initials"
-                                font.pixelSize: Theme.fontSizeMedium
-                                font.weight: Font.Medium
-                                color: Theme.surfaceText
-                            }
-                            StyledText {
-                                text: "Hide the day labels (S, M, T...) from the heatmap."
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: Theme.surfaceVariantText
+                            Column {
                                 Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                StyledText {
+                                    text: "Hide Days Initials"
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+                                StyledText {
+                                    text: "Hide weekday column labels (S, M, T...) from the heatmap"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
                             }
-                        }
 
-                        DankToggle {
-                            id: hideDaysToggle
-                            Layout.alignment: Qt.AlignVCenter
-                            checked: false
-                            onClicked: {
-                                checked = !checked
+                            DankToggle {
+                                id: hideDaysToggle
+                                Layout.alignment: Qt.AlignVCenter
+                                checked: false
+                                onClicked: {
+                                    checked = !checked
+                                }
                             }
                         }
                     }
@@ -708,580 +780,706 @@ PluginSettings {
             }
         }
 
-        // --- Desktop Settings Section (Instance Settings) ---
+        // ========================================================
+        // 2. DESKTOP WIDGET SETTINGS (Instance Settings)
+        // ========================================================
         Column {
             width: parent.width
             spacing: Theme.spacingL
             visible: root.isInstanceSettings
 
-            StyledText {
+            // --- Section: Geometry & Appearance ---
+            Column {
                 width: parent.width
-                text: "Desktop Widget"
-                font.pixelSize: Theme.fontSizeLarge
-                font.weight: Font.Bold
-                color: Theme.surfaceText
-            }
+                spacing: Theme.spacingS
 
-            StyledText {
-                width: parent.width
-                text: "Only affects the resizable card placed on your desktop."
-                font.pixelSize: Theme.fontSizeSmall
-                color: Theme.surfaceVariantText
-                wrapMode: Text.WordWrap
-            }
-
-            Rectangle {
-                width: parent.width
-                height: Math.max(0, desktopCol.implicitHeight + Theme.spacingM * 2)
-                color: Theme.surfaceContainer
-                radius: Theme.cornerRadius
-                border.color: Theme.outline
-                border.width: 1
-                opacity: 0.8
+                Row {
+                    spacing: Theme.spacingXS
+                    leftPadding: Theme.spacingM
+                    DankIcon {
+                        name: "desktop_windows"
+                        size: 16
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    StyledText {
+                        text: "Geometry & Layout"
+                        font.pixelSize: Theme.fontSizeSmall
+                        font.weight: Font.DemiBold
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
 
                 Column {
-                    id: desktopCol
-                    anchors.fill: parent
-                    anchors.margins: Theme.spacingM
-                    spacing: Theme.spacingM
+                    width: parent.width
+                    spacing: 2
 
-                    Column {
+                    // Segment 1: Background Opacity Slider
+                    Rectangle {
                         width: parent.width
-                        spacing: Theme.spacingXS
+                        implicitHeight: opacityCol.implicitHeight + Theme.spacingM * 2
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                        RowLayout {
-                            width: parent.width
-                            spacing: Theme.spacingM
+                        topLeftRadius: root.outerR
+                        topRightRadius: root.outerR
+                        bottomLeftRadius: root.innerR
+                        bottomRightRadius: root.innerR
 
-                            StyledText {
-                                text: "Background Opacity"
-                                font.pixelSize: Theme.fontSizeSmall
-                                font.weight: Font.Medium
-                                color: Theme.surfaceText
-                                Layout.fillWidth: true
-                            }
+                        Column {
+                            id: opacityCol
+                            anchors.fill: parent
+                            anchors.margins: Theme.spacingM
+                            spacing: Theme.spacingXS
 
-                            Rectangle {
-                                id: opacityResetBtn
-                                width: 24; height: 24
-                                radius: 6
-                                Layout.alignment: Qt.AlignVCenter
-                                color: opacityResetMa.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
-                                border.color: opacityResetMa.containsMouse ? Theme.primary : Theme.outline
-                                border.width: 1
-                                opacity: root.currentDesktopOpacity !== 80 ? (opacityResetMa.containsMouse ? 1.0 : 0.9) : 0.0
-                                visible: opacity > 0
-                                scale: opacityResetMa.containsMouse ? 1.1 : 1.0
+                            RowLayout {
+                                width: parent.width
+                                spacing: Theme.spacingM
 
-                                Behavior on color { ColorAnimation { duration: 150 } }
-                                Behavior on border.color { ColorAnimation { duration: 150 } }
-                                Behavior on opacity { NumberAnimation { duration: 150 } }
-                                Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                Rectangle {
+                                    width: 30
+                                    height: 30
+                                    radius: 15
+                                    color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                                    Layout.alignment: Qt.AlignVCenter
 
-                                DankRipple {
-                                    id: opacityRip
-                                    anchors.fill: parent
-                                    cornerRadius: parent.radius
-                                    rippleColor: Theme.primary
+                                    DankIcon {
+                                        name: "opacity"
+                                        size: 16
+                                        color: Theme.primary
+                                        anchors.centerIn: parent
+                                    }
                                 }
 
-                                DankIcon {
-                                    name: "restart_alt"
-                                    size: 14
-                                    anchors.centerIn: parent
-                                    color: opacityResetMa.containsMouse ? Theme.primary : Theme.surfaceVariantText
-                                    rotation: opacityResetMa.containsMouse ? 90 : 0
-                                    Behavior on rotation { NumberAnimation { duration: 450; easing.type: Easing.OutBack } }
+                                StyledText {
+                                    text: "Background Opacity"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                    Layout.fillWidth: true
+                                }
+
+                                Rectangle {
+                                    id: opacityResetBtn
+                                    width: 24; height: 24
+                                    radius: 6
+                                    Layout.alignment: Qt.AlignVCenter
+                                    color: opacityResetMa.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
+                                    border.color: opacityResetMa.containsMouse ? Theme.primary : Theme.outline
+                                    border.width: 1
+                                    opacity: root.currentDesktopOpacity !== 80 ? (opacityResetMa.containsMouse ? 1.0 : 0.9) : 0.0
+                                    visible: opacity > 0
+                                    scale: opacityResetMa.containsMouse ? 1.1 : 1.0
+
                                     Behavior on color { ColorAnimation { duration: 150 } }
-                                }
+                                    Behavior on border.color { ColorAnimation { duration: 150 } }
+                                    Behavior on opacity { NumberAnimation { duration: 150 } }
+                                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
-                                ParallelAnimation {
-                                    id: opacityResetAnim
-                                    NumberAnimation {
-                                        target: root
-                                        property: "currentDesktopOpacity"
-                                        to: 80
-                                        duration: 350
-                                        easing.type: Easing.OutCubic
+                                    DankRipple {
+                                        id: opacityRip
+                                        anchors.fill: parent
+                                        cornerRadius: parent.radius
+                                        rippleColor: Theme.primary
                                     }
-                                    NumberAnimation {
-                                        target: desktopOpacitySlider
-                                        property: "value"
-                                        to: 80
-                                        duration: 350
-                                        easing.type: Easing.OutCubic
-                                    }
-                                    onStopped: {
-                                        desktopOpacitySlider.value = Qt.binding(function() { return root.currentDesktopOpacity })
-                                    }
-                                }
 
-                                MouseArea {
-                                    id: opacityResetMa
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: opacityResetAnim.start()
-                                    onPressed: (m) => opacityRip.trigger(m.x, m.y)
+                                    DankIcon {
+                                        name: "restart_alt"
+                                        size: 14
+                                        anchors.centerIn: parent
+                                        color: opacityResetMa.containsMouse ? Theme.primary : Theme.surfaceVariantText
+                                        rotation: opacityResetMa.containsMouse ? 90 : 0
+                                        Behavior on rotation { NumberAnimation { duration: 450; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                    }
+
+                                    ParallelAnimation {
+                                        id: opacityResetAnim
+                                        NumberAnimation {
+                                            target: root
+                                            property: "currentDesktopOpacity"
+                                            to: 80
+                                            duration: 350
+                                            easing.type: Easing.OutCubic
+                                        }
+                                        NumberAnimation {
+                                            target: desktopOpacitySlider
+                                            property: "value"
+                                            to: 80
+                                            duration: 350
+                                            easing.type: Easing.OutCubic
+                                        }
+                                        onStopped: {
+                                            desktopOpacitySlider.value = Qt.binding(function() { return root.currentDesktopOpacity })
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: opacityResetMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: opacityResetAnim.start()
+                                        onPressed: (m) => opacityRip.trigger(m.x, m.y)
+                                    }
                                 }
                             }
-                        }
 
-                        DankSlider {
-                            id: desktopOpacitySlider
-                            width: parent.width
-                            minimum: 0
-                            maximum: 100
-                            value: root.currentDesktopOpacity
-                            leftIcon: "opacity"
-                            unit: "%"
-                            wheelEnabled: false
-                            onSliderValueChanged: val => {
-                                root.currentDesktopOpacity = val
+                            DankSlider {
+                                id: desktopOpacitySlider
+                                width: parent.width
+                                minimum: 0
+                                maximum: 100
+                                value: root.currentDesktopOpacity
+                                leftIcon: "opacity"
+                                unit: "%"
+                                wheelEnabled: false
+                                onSliderValueChanged: val => {
+                                    root.currentDesktopOpacity = val
+                                }
                             }
                         }
                     }
 
-                    Column {
+                    // Segment 2: Square Size Slider
+                    Rectangle {
                         width: parent.width
-                        spacing: Theme.spacingXS
+                        implicitHeight: sizeCol.implicitHeight + Theme.spacingM * 2
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                        RowLayout {
-                            width: parent.width
-                            spacing: Theme.spacingM
+                        topLeftRadius: root.innerR
+                        topRightRadius: root.innerR
+                        bottomLeftRadius: root.innerR
+                        bottomRightRadius: root.innerR
 
-                            StyledText {
-                                text: "Square Size"
-                                font.pixelSize: Theme.fontSizeSmall
-                                font.weight: Font.Medium
-                                color: Theme.surfaceText
-                                Layout.fillWidth: true
-                            }
+                        Column {
+                            id: sizeCol
+                            anchors.fill: parent
+                            anchors.margins: Theme.spacingM
+                            spacing: Theme.spacingXS
 
-                            Rectangle {
-                                id: sizeResetBtn
-                                width: 24; height: 24
-                                radius: 6
-                                Layout.alignment: Qt.AlignVCenter
-                                color: sizeResetMa.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
-                                border.color: sizeResetMa.containsMouse ? Theme.primary : Theme.outline
-                                border.width: 1
-                                opacity: root.currentDesktopSquareSize !== 24 ? (sizeResetMa.containsMouse ? 1.0 : 0.9) : 0.0
-                                visible: opacity > 0
-                                scale: sizeResetMa.containsMouse ? 1.1 : 1.0
+                            RowLayout {
+                                width: parent.width
+                                spacing: Theme.spacingM
 
-                                Behavior on color { ColorAnimation { duration: 150 } }
-                                Behavior on border.color { ColorAnimation { duration: 150 } }
-                                Behavior on opacity { NumberAnimation { duration: 150 } }
-                                Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                Rectangle {
+                                    width: 30
+                                    height: 30
+                                    radius: 15
+                                    color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                                    Layout.alignment: Qt.AlignVCenter
 
-                                DankRipple {
-                                    id: sizeRip
-                                    anchors.fill: parent
-                                    cornerRadius: parent.radius
-                                    rippleColor: Theme.primary
+                                    DankIcon {
+                                        name: "grid_on"
+                                        size: 16
+                                        color: Theme.primary
+                                        anchors.centerIn: parent
+                                    }
                                 }
 
-                                DankIcon {
-                                    name: "restart_alt"
-                                    size: 14
-                                    anchors.centerIn: parent
-                                    color: sizeResetMa.containsMouse ? Theme.primary : Theme.surfaceVariantText
-                                    rotation: sizeResetMa.containsMouse ? 90 : 0
-                                    Behavior on rotation { NumberAnimation { duration: 450; easing.type: Easing.OutBack } }
+                                StyledText {
+                                    text: "Square Size"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                    Layout.fillWidth: true
+                                }
+
+                                Rectangle {
+                                    id: sizeResetBtn
+                                    width: 24; height: 24
+                                    radius: 6
+                                    Layout.alignment: Qt.AlignVCenter
+                                    color: sizeResetMa.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
+                                    border.color: sizeResetMa.containsMouse ? Theme.primary : Theme.outline
+                                    border.width: 1
+                                    opacity: root.currentDesktopSquareSize !== 24 ? (sizeResetMa.containsMouse ? 1.0 : 0.9) : 0.0
+                                    visible: opacity > 0
+                                    scale: sizeResetMa.containsMouse ? 1.1 : 1.0
+
                                     Behavior on color { ColorAnimation { duration: 150 } }
-                                }
+                                    Behavior on border.color { ColorAnimation { duration: 150 } }
+                                    Behavior on opacity { NumberAnimation { duration: 150 } }
+                                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
-                                ParallelAnimation {
-                                    id: sizeResetAnim
-                                    NumberAnimation {
-                                        target: root
-                                        property: "currentDesktopSquareSize"
-                                        to: 24
-                                        duration: 350
-                                        easing.type: Easing.OutCubic
+                                    DankRipple {
+                                        id: sizeRip
+                                        anchors.fill: parent
+                                        cornerRadius: parent.radius
+                                        rippleColor: Theme.primary
                                     }
-                                    NumberAnimation {
-                                        target: desktopSquareSizeSlider
-                                        property: "value"
-                                        to: 24
-                                        duration: 350
-                                        easing.type: Easing.OutCubic
-                                    }
-                                    onStopped: {
-                                        desktopSquareSizeSlider.value = Qt.binding(function() { return root.currentDesktopSquareSize })
-                                    }
-                                }
 
-                                MouseArea {
-                                    id: sizeResetMa
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: sizeResetAnim.start()
-                                    onPressed: (m) => sizeRip.trigger(m.x, m.y)
+                                    DankIcon {
+                                        name: "restart_alt"
+                                        size: 14
+                                        anchors.centerIn: parent
+                                        color: sizeResetMa.containsMouse ? Theme.primary : Theme.surfaceVariantText
+                                        rotation: sizeResetMa.containsMouse ? 90 : 0
+                                        Behavior on rotation { NumberAnimation { duration: 450; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                    }
+
+                                    ParallelAnimation {
+                                        id: sizeResetAnim
+                                        NumberAnimation {
+                                            target: root
+                                            property: "currentDesktopSquareSize"
+                                            to: 24
+                                            duration: 350
+                                            easing.type: Easing.OutCubic
+                                        }
+                                        NumberAnimation {
+                                            target: desktopSquareSizeSlider
+                                            property: "value"
+                                            to: 24
+                                            duration: 350
+                                            easing.type: Easing.OutCubic
+                                        }
+                                        onStopped: {
+                                            desktopSquareSizeSlider.value = Qt.binding(function() { return root.currentDesktopSquareSize })
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: sizeResetMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: sizeResetAnim.start()
+                                        onPressed: (m) => sizeRip.trigger(m.x, m.y)
+                                    }
                                 }
                             }
-                        }
 
-                        DankSlider {
-                            id: desktopSquareSizeSlider
-                            width: parent.width
-                            minimum: 6
-                            maximum: 32
-                            value: root.currentDesktopSquareSize
-                            leftIcon: "grid_on"
-                            unit: "px"
-                            wheelEnabled: false
-                            onSliderValueChanged: val => {
-                                root.currentDesktopSquareSize = val
+                            DankSlider {
+                                id: desktopSquareSizeSlider
+                                width: parent.width
+                                minimum: 6
+                                maximum: 32
+                                value: root.currentDesktopSquareSize
+                                leftIcon: "grid_on"
+                                unit: "px"
+                                wheelEnabled: false
+                                onSliderValueChanged: val => {
+                                    root.currentDesktopSquareSize = val
+                                }
                             }
                         }
                     }
 
-                    Column {
+                    // Segment 3: Square Spacing Slider
+                    Rectangle {
                         width: parent.width
-                        spacing: Theme.spacingXS
+                        implicitHeight: spacingCol.implicitHeight + Theme.spacingM * 2
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                        RowLayout {
-                            width: parent.width
-                            spacing: Theme.spacingM
+                        topLeftRadius: root.innerR
+                        topRightRadius: root.innerR
+                        bottomLeftRadius: root.outerR
+                        bottomRightRadius: root.outerR
 
-                            StyledText {
-                                text: "Square Spacing"
-                                font.pixelSize: Theme.fontSizeSmall
-                                font.weight: Font.Medium
-                                color: Theme.surfaceText
-                                Layout.fillWidth: true
-                            }
+                        Column {
+                            id: spacingCol
+                            anchors.fill: parent
+                            anchors.margins: Theme.spacingM
+                            spacing: Theme.spacingXS
 
-                            Rectangle {
-                                id: spacingResetBtn
-                                width: 24; height: 24
-                                radius: 6
-                                Layout.alignment: Qt.AlignVCenter
-                                color: spacingResetMa.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
-                                border.color: spacingResetMa.containsMouse ? Theme.primary : Theme.outline
-                                border.width: 1
-                                opacity: root.currentDesktopSquareSpacing !== 4 ? (spacingResetMa.containsMouse ? 1.0 : 0.9) : 0.0
-                                visible: opacity > 0
-                                scale: spacingResetMa.containsMouse ? 1.1 : 1.0
+                            RowLayout {
+                                width: parent.width
+                                spacing: Theme.spacingM
 
-                                Behavior on color { ColorAnimation { duration: 150 } }
-                                Behavior on border.color { ColorAnimation { duration: 150 } }
-                                Behavior on opacity { NumberAnimation { duration: 150 } }
-                                Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                Rectangle {
+                                    width: 30
+                                    height: 30
+                                    radius: 15
+                                    color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                                    Layout.alignment: Qt.AlignVCenter
 
-                                DankRipple {
-                                    id: spacingRip
-                                    anchors.fill: parent
-                                    cornerRadius: parent.radius
-                                    rippleColor: Theme.primary
+                                    DankIcon {
+                                        name: "space_bar"
+                                        size: 16
+                                        color: Theme.primary
+                                        anchors.centerIn: parent
+                                    }
                                 }
 
-                                DankIcon {
-                                    name: "restart_alt"
-                                    size: 14
-                                    anchors.centerIn: parent
-                                    color: spacingResetMa.containsMouse ? Theme.primary : Theme.surfaceVariantText
-                                    rotation: spacingResetMa.containsMouse ? 90 : 0
-                                    Behavior on rotation { NumberAnimation { duration: 450; easing.type: Easing.OutBack } }
+                                StyledText {
+                                    text: "Square Spacing"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                    Layout.fillWidth: true
+                                }
+
+                                Rectangle {
+                                    id: spacingResetBtn
+                                    width: 24; height: 24
+                                    radius: 6
+                                    Layout.alignment: Qt.AlignVCenter
+                                    color: spacingResetMa.containsMouse ? Theme.surfaceContainerHighest : Theme.surfaceContainerHigh
+                                    border.color: spacingResetMa.containsMouse ? Theme.primary : Theme.outline
+                                    border.width: 1
+                                    opacity: root.currentDesktopSquareSpacing !== 4 ? (spacingResetMa.containsMouse ? 1.0 : 0.9) : 0.0
+                                    visible: opacity > 0
+                                    scale: spacingResetMa.containsMouse ? 1.1 : 1.0
+
                                     Behavior on color { ColorAnimation { duration: 150 } }
-                                }
+                                    Behavior on border.color { ColorAnimation { duration: 150 } }
+                                    Behavior on opacity { NumberAnimation { duration: 150 } }
+                                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
-                                ParallelAnimation {
-                                    id: spacingResetAnim
-                                    NumberAnimation {
-                                        target: root
-                                        property: "currentDesktopSquareSpacing"
-                                        to: 4
-                                        duration: 350
-                                        easing.type: Easing.OutCubic
+                                    DankRipple {
+                                        id: spacingRip
+                                        anchors.fill: parent
+                                        cornerRadius: parent.radius
+                                        rippleColor: Theme.primary
                                     }
-                                    NumberAnimation {
-                                        target: desktopSquareSpacingSlider
-                                        property: "value"
-                                        to: 4
-                                        duration: 350
-                                        easing.type: Easing.OutCubic
-                                    }
-                                    onStopped: {
-                                        desktopSquareSpacingSlider.value = Qt.binding(function() { return root.currentDesktopSquareSpacing })
-                                    }
-                                }
 
-                                MouseArea {
-                                    id: spacingResetMa
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: spacingResetAnim.start()
-                                    onPressed: (m) => spacingRip.trigger(m.x, m.y)
+                                    DankIcon {
+                                        name: "restart_alt"
+                                        size: 14
+                                        anchors.centerIn: parent
+                                        color: spacingResetMa.containsMouse ? Theme.primary : Theme.surfaceVariantText
+                                        rotation: spacingResetMa.containsMouse ? 90 : 0
+                                        Behavior on rotation { NumberAnimation { duration: 450; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                    }
+
+                                    ParallelAnimation {
+                                        id: spacingResetAnim
+                                        NumberAnimation {
+                                            target: root
+                                            property: "currentDesktopSquareSpacing"
+                                            to: 4
+                                            duration: 350
+                                            easing.type: Easing.OutCubic
+                                        }
+                                        NumberAnimation {
+                                            target: desktopSquareSpacingSlider
+                                            property: "value"
+                                            to: 4
+                                            duration: 350
+                                            easing.type: Easing.OutCubic
+                                        }
+                                        onStopped: {
+                                            desktopSquareSpacingSlider.value = Qt.binding(function() { return root.currentDesktopSquareSpacing })
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: spacingResetMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: spacingResetAnim.start()
+                                        onPressed: (m) => spacingRip.trigger(m.x, m.y)
+                                    }
                                 }
                             }
-                        }
 
-                        DankSlider {
-                            id: desktopSquareSpacingSlider
-                            width: parent.width
-                            minimum: 1
-                            maximum: 8
-                            value: root.currentDesktopSquareSpacing
-                            leftIcon: "space_bar"
-                            unit: "px"
-                            wheelEnabled: false
-                            onSliderValueChanged: val => {
-                                root.currentDesktopSquareSpacing = val
+                            DankSlider {
+                                id: desktopSquareSpacingSlider
+                                width: parent.width
+                                minimum: 1
+                                maximum: 8
+                                value: root.currentDesktopSquareSpacing
+                                leftIcon: "space_bar"
+                                unit: "px"
+                                wheelEnabled: false
+                                onSliderValueChanged: val => {
+                                    root.currentDesktopSquareSpacing = val
+                                }
                             }
                         }
                     }
+                }
+            }
 
-                    // Display Mode Dropdown
-                    Column {
+            // --- Section: Desktop Card Display ---
+            Column {
+                width: parent.width
+                spacing: Theme.spacingS
+
+                Row {
+                    spacing: Theme.spacingXS
+                    leftPadding: Theme.spacingM
+                    DankIcon {
+                        name: "view_compact"
+                        size: 16
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    StyledText {
+                        text: "Desktop Display Mode"
+                        font.pixelSize: Theme.fontSizeSmall
+                        font.weight: Font.DemiBold
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                Column {
+                    width: parent.width
+                    spacing: 2
+
+                    // Segment 1: Display Mode Dropdown
+                    Rectangle {
                         width: parent.width
-                        spacing: Theme.spacingXS
+                        implicitHeight: desktopDisplayModeRow.implicitHeight + Theme.spacingM * 2
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                        StyledText {
-                            text: "Display Mode"
-                            font.pixelSize: Theme.fontSizeSmall
-                            font.weight: Font.Medium
-                            color: Theme.surfaceText
-                        }
+                        topLeftRadius: root.outerR
+                        topRightRadius: root.outerR
+                        bottomLeftRadius: root.innerR
+                        bottomRightRadius: root.innerR
 
                         RowLayout {
-                            width: parent.width
+                            id: desktopDisplayModeRow
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingM
+                            anchors.rightMargin: Theme.spacingM
                             spacing: Theme.spacingM
 
-                            DankIcon {
-                                name: "grid_view"
-                                size: 22
-                                opacity: 0.8
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
                                 Layout.alignment: Qt.AlignVCenter
+
+                                DankIcon {
+                                    name: "grid_view"
+                                    size: 18
+                                    color: Theme.primary
+                                    anchors.centerIn: parent
+                                }
                             }
 
-                            ComboBox {
+                            Column {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                StyledText {
+                                    text: "Display Mode"
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+                                StyledText {
+                                    text: "Amount of contribution history displayed on desktop"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            DankDropdown {
                                 id: desktopDisplayModeCombo
-                                Layout.fillWidth: true
-                                model: ["Week", "Month", "2 Month", "Year"]
-
-                                delegate: ItemDelegate {
-                                    width: desktopDisplayModeCombo.width
-                                    contentItem: StyledText {
-                                        text: modelData
-                                        color: highlighted ? Theme.primary : Theme.surfaceText
-                                        font.pixelSize: Theme.fontSizeMedium
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                    background: Rectangle {
-                                        color: highlighted ? Theme.withAlpha(Theme.primary, 0.1) : "transparent"
-                                    }
-                                }
-
-                                contentItem: StyledText {
-                                    leftPadding: Theme.spacingS
-                                    rightPadding: desktopDisplayModeCombo.indicator.width + desktopDisplayModeCombo.spacing
-                                    text: desktopDisplayModeCombo.displayText
-                                    color: Theme.surfaceText
-                                    font.pixelSize: Theme.fontSizeMedium
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-
-                                background: Rectangle {
-                                    implicitWidth: 120
-                                    implicitHeight: 40
-                                    border.color: desktopDisplayModeCombo.pressed ? Theme.primary : Theme.withAlpha(Theme.outline, 0.5)
-                                    border.width: desktopDisplayModeCombo.visualFocus ? 2 : 1
-                                    color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                                    radius: Theme.cornerRadius
-                                }
-
-                                popup: Popup {
-                                    y: desktopDisplayModeCombo.height + 2
-                                    width: desktopDisplayModeCombo.width
-                                    implicitHeight: contentItem.implicitHeight
-                                    padding: 1
-
-                                    contentItem: ListView {
-                                        clip: true
-                                        implicitHeight: contentHeight
-                                        model: desktopDisplayModeCombo.popup.visible ? desktopDisplayModeCombo.delegateModel : null
-                                        currentIndex: desktopDisplayModeCombo.highlightedIndex
-
-                                        ScrollIndicator.vertical: ScrollIndicator { }
-                                    }
-
-                                    background: Rectangle {
-                                        color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                                        border.color: Theme.withAlpha(Theme.outline, 0.5)
-                                        border.width: 1
-                                        radius: Theme.cornerRadius
-                                    }
-                                }
+                                Layout.preferredWidth: Math.min(180, parent.width * 0.4)
+                                Layout.alignment: Qt.AlignVCenter
+                                options: ["Week", "Month", "2 Month", "Year"]
+                                currentValue: root.savedDesktopDisplayMode
                             }
                         }
                     }
 
-                    // Start Day Dropdown
-                    Column {
+                    // Segment 2: Start Day Dropdown
+                    Rectangle {
                         width: parent.width
-                        spacing: Theme.spacingXS
+                        implicitHeight: desktopStartDayRow.implicitHeight + Theme.spacingM * 2
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                        StyledText {
-                            text: "Start Day"
-                            font.pixelSize: Theme.fontSizeSmall
-                            font.weight: Font.Medium
-                            color: Theme.surfaceText
-                        }
+                        topLeftRadius: root.innerR
+                        topRightRadius: root.innerR
+                        bottomLeftRadius: root.innerR
+                        bottomRightRadius: root.innerR
 
                         RowLayout {
-                            width: parent.width
+                            id: desktopStartDayRow
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingM
+                            anchors.rightMargin: Theme.spacingM
                             spacing: Theme.spacingM
 
-                            DankIcon {
-                                name: "calendar_today"
-                                size: 22
-                                opacity: 0.8
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
                                 Layout.alignment: Qt.AlignVCenter
+
+                                DankIcon {
+                                    name: "calendar_today"
+                                    size: 18
+                                    color: Theme.primary
+                                    anchors.centerIn: parent
+                                }
                             }
 
-                            ComboBox {
-                                id: desktopStartDayCombo
+                            Column {
                                 Layout.fillWidth: true
-                                model: ["Sunday", "Monday"]
-
-                                delegate: ItemDelegate {
-                                    width: desktopStartDayCombo.width
-                                    contentItem: StyledText {
-                                        text: modelData
-                                        color: highlighted ? Theme.primary : Theme.surfaceText
-                                        font.pixelSize: Theme.fontSizeMedium
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                    background: Rectangle {
-                                        color: highlighted ? Theme.withAlpha(Theme.primary, 0.1) : "transparent"
-                                    }
-                                }
-
-                                contentItem: StyledText {
-                                    leftPadding: Theme.spacingS
-                                    rightPadding: desktopStartDayCombo.indicator.width + desktopStartDayCombo.spacing
-                                    text: desktopStartDayCombo.displayText
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                StyledText {
+                                    text: "Start Day"
+                                    font.weight: Font.Medium
                                     color: Theme.surfaceText
-                                    font.pixelSize: Theme.fontSizeMedium
-                                    verticalAlignment: Text.AlignVCenter
                                 }
-
-                                background: Rectangle {
-                                    implicitWidth: 120
-                                    implicitHeight: 40
-                                    border.color: desktopStartDayCombo.pressed ? Theme.primary : Theme.withAlpha(Theme.outline, 0.5)
-                                    border.width: desktopStartDayCombo.visualFocus ? 2 : 1
-                                    color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                                    radius: Theme.cornerRadius
+                                StyledText {
+                                    text: "First weekday of each week column on the desktop card"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
                                 }
+                            }
 
-                                popup: Popup {
-                                    y: desktopStartDayCombo.height + 2
-                                    width: desktopStartDayCombo.width
-                                    implicitHeight: contentItem.implicitHeight
-                                    padding: 1
+                            DankDropdown {
+                                id: desktopStartDayCombo
+                                Layout.preferredWidth: Math.min(180, parent.width * 0.4)
+                                Layout.alignment: Qt.AlignVCenter
+                                options: ["Sunday", "Monday"]
+                                currentValue: root.savedDesktopStartDay
+                            }
+                        }
+                    }
 
-                                    contentItem: ListView {
-                                        clip: true
-                                        implicitHeight: contentHeight
-                                        model: desktopStartDayCombo.popup.visible ? desktopStartDayCombo.delegateModel : null
-                                        currentIndex: desktopStartDayCombo.highlightedIndex
+                    // Segment 3: Hide Days Initials Toggle
+                    Rectangle {
+                        width: parent.width
+                        height: 56
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                                        ScrollIndicator.vertical: ScrollIndicator { }
-                                    }
+                        topLeftRadius: root.innerR
+                        topRightRadius: root.innerR
+                        bottomLeftRadius: root.innerR
+                        bottomRightRadius: root.innerR
 
-                                    background: Rectangle {
-                                        color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                                        border.color: Theme.withAlpha(Theme.outline, 0.5)
-                                        border.width: 1
-                                        radius: Theme.cornerRadius
-                                    }
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingM
+                            anchors.rightMargin: Theme.spacingM
+                            spacing: Theme.spacingM
+
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: desktopHideDaysToggle.checked ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15) : Qt.rgba(Theme.surfaceContainerHighest.r, Theme.surfaceContainerHighest.g, Theme.surfaceContainerHighest.b, 0.5)
+                                Layout.alignment: Qt.AlignVCenter
+                                Behavior on color { ColorAnimation { duration: 150 } }
+
+                                DankIcon {
+                                    name: "visibility_off"
+                                    size: 18
+                                    color: desktopHideDaysToggle.checked ? Theme.primary : Theme.surfaceVariantText
+                                    anchors.centerIn: parent
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                }
+                            }
+
+                            Column {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                StyledText {
+                                    text: "Hide Days Initials"
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+                                StyledText {
+                                    text: "Hide weekday column labels from the desktop heatmap"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            DankToggle {
+                                id: desktopHideDaysToggle
+                                Layout.alignment: Qt.AlignVCenter
+                                checked: false
+                                onClicked: {
+                                    checked = !checked
                                 }
                             }
                         }
                     }
 
-                    // Hide Days Initials Toggle
-                    RowLayout {
+                    // Segment 4: Follow DMS Theme Color (Desktop)
+                    Rectangle {
                         width: parent.width
-                        spacing: Theme.spacingM
+                        height: 56
+                        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.5)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
 
-                        DankIcon {
-                            name: "visibility_off"
-                            size: 22
-                            opacity: 0.8
-                            Layout.alignment: Qt.AlignVCenter
-                        }
+                        topLeftRadius: root.innerR
+                        topRightRadius: root.innerR
+                        bottomLeftRadius: root.outerR
+                        bottomRightRadius: root.outerR
 
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: Theme.spacingXXS
-                            StyledText {
-                                text: "Hide Days Initials"
-                                font.pixelSize: Theme.fontSizeMedium
-                                font.weight: Font.Medium
-                                color: Theme.surfaceText
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingM
+                            anchors.rightMargin: Theme.spacingM
+                            spacing: Theme.spacingM
+
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 16
+                                color: desktopFollowThemeToggle.checked ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15) : Qt.rgba(Theme.surfaceContainerHighest.r, Theme.surfaceContainerHighest.g, Theme.surfaceContainerHighest.b, 0.5)
+                                Layout.alignment: Qt.AlignVCenter
+                                Behavior on color { ColorAnimation { duration: 150 } }
+
+                                DankIcon {
+                                    name: "palette"
+                                    size: 18
+                                    color: desktopFollowThemeToggle.checked ? Theme.primary : Theme.surfaceVariantText
+                                    anchors.centerIn: parent
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                }
                             }
-                            StyledText {
-                                text: "Hide the day labels (S, M, T...) from the desktop heatmap."
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: Theme.surfaceVariantText
+
+                            Column {
                                 Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+                                StyledText {
+                                    text: "Follow DMS Theme Color"
+                                    font.weight: Font.Medium
+                                    color: Theme.surfaceText
+                                }
+                                StyledText {
+                                    text: "Use active DMS accent color instead of classic GitHub green"
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.surfaceVariantText
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
                             }
-                        }
 
-                        DankToggle {
-                            id: desktopHideDaysToggle
-                            Layout.alignment: Qt.AlignVCenter
-                            checked: false
-                            onClicked: {
-                                checked = !checked
-                            }
-                        }
-                    }
-
-                    // Follow DMS Theme Color Toggle (Desktop Specific)
-                    RowLayout {
-                        width: parent.width
-                        spacing: Theme.spacingM
-
-                        DankIcon {
-                            name: "palette"
-                            size: 22
-                            opacity: 0.8
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: Theme.spacingXXS
-                            StyledText {
-                                text: "Follow DMS Theme Color"
-                                font.pixelSize: Theme.fontSizeMedium
-                                font.weight: Font.Medium
-                                color: Theme.surfaceText
-                            }
-                            StyledText {
-                                text: "Use your DMS accent color for the desktop heatmap instead of the classic GitHub green."
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: Theme.surfaceVariantText
-                                Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-
-                        DankToggle {
-                            id: desktopFollowThemeToggle
-                            Layout.alignment: Qt.AlignVCenter
-                            checked: true
-                            onClicked: {
-                                checked = !checked
+                            DankToggle {
+                                id: desktopFollowThemeToggle
+                                Layout.alignment: Qt.AlignVCenter
+                                checked: true
+                                onClicked: {
+                                    checked = !checked
+                                }
                             }
                         }
                     }
@@ -1289,13 +1487,14 @@ PluginSettings {
             }
         }
 
-        // --- Action Buttons (Save & Reset) ---
+        // ========================================================
+        // 3. ACTION BUTTONS (Save & Apply)
+        // ========================================================
         RowLayout {
             width: parent.width
             spacing: Theme.spacingM
             height: 44
 
-            // --- Save Button ---
             Item {
                 id: saveBtn
                 Layout.fillWidth: true
@@ -1316,8 +1515,10 @@ PluginSettings {
                             root.saveValue("desktopBackgroundOpacity", root.currentDesktopOpacity)
                             root.saveValue("desktopSquareSize", root.currentDesktopSquareSize)
                             root.saveValue("desktopSquareSpacing", root.currentDesktopSquareSpacing)
-                            root.saveValue("displayMode", desktopDisplayModeCombo.currentText)
-                            root.saveValue("startDay", desktopStartDayCombo.currentText)
+                            const displayMode = desktopDisplayModeCombo.currentValue || desktopDisplayModeCombo.currentText
+                            const startDay = desktopStartDayCombo.currentValue || desktopStartDayCombo.currentText
+                            root.saveValue("displayMode", displayMode)
+                            root.saveValue("startDay", startDay)
                             root.saveValue("hideDaysInitials", desktopHideDaysToggle.checked)
                             root.saveValue("followThemeColor", desktopFollowThemeToggle.checked)
 
@@ -1325,8 +1526,8 @@ PluginSettings {
                             root.savedDesktopOpacity = root.currentDesktopOpacity
                             root.savedDesktopSquareSize = root.currentDesktopSquareSize
                             root.savedDesktopSquareSpacing = root.currentDesktopSquareSpacing
-                            root.savedDesktopDisplayMode = desktopDisplayModeCombo.currentText
-                            root.savedDesktopStartDay = desktopStartDayCombo.currentText
+                            root.savedDesktopDisplayMode = displayMode
+                            root.savedDesktopStartDay = startDay
                             root.savedDesktopHideDays = desktopHideDaysToggle.checked
                             root.savedDesktopFollowTheme = desktopFollowThemeToggle.checked
                         } else {
@@ -1344,8 +1545,8 @@ PluginSettings {
 
                             const notify = notifyToggle.checked
                             const followTheme = themeColorToggle.checked
-                            const displayMode = displayModeCombo.currentText
-                            const startDay = startDayCombo.currentText
+                            const displayMode = displayModeCombo.currentValue || displayModeCombo.currentText
+                            const startDay = startDayCombo.currentValue || startDayCombo.currentText
                             const hideDays = hideDaysToggle.checked
 
                             // Persist & Notify
@@ -1374,7 +1575,7 @@ PluginSettings {
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: Theme.cornerRadius
+                    radius: root.outerR
                     color: root.hasPendingChanges
                         ? (saveArea.pressed ? Theme.withAlpha(Theme.primary, 0.80) : (saveArea.containsMouse ? Theme.withAlpha(Theme.primary, 0.90) : Theme.primary))
                         : (saveArea.pressed ? Theme.withAlpha(Theme.primary, 0.18) : (saveArea.containsMouse ? Theme.withAlpha(Theme.primary, 0.10) : Theme.withAlpha(Theme.secondary, 0.04)))
@@ -1394,7 +1595,7 @@ PluginSettings {
                         id: saveIcon
                         name: "published_with_changes"
                         size: 20
-                        color: root.hasPendingChanges ? "#ffffff" : Theme.primary
+                        color: root.hasPendingChanges ? Theme.primaryText : Theme.primary
                         
                         SequentialAnimation {
                             running: saveArea.containsMouse
@@ -1409,7 +1610,7 @@ PluginSettings {
                     
                     StyledText {
                         text: "Save & Apply"
-                        color: root.hasPendingChanges ? "#ffffff" : Theme.primary
+                        color: root.hasPendingChanges ? Theme.primaryText : Theme.primary
                         font.pixelSize: Theme.fontSizeMedium
                         font.bold: true
                         verticalAlignment: Text.AlignVCenter
@@ -1418,8 +1619,8 @@ PluginSettings {
 
                 DankRipple {
                     id: saveRipple
-                    rippleColor: root.hasPendingChanges ? Theme.withAlpha("#ffffff", 0.3) : Theme.surfaceText
-                    cornerRadius: Theme.cornerRadius
+                    rippleColor: root.hasPendingChanges ? Theme.withAlpha(Theme.primaryText, 0.3) : Theme.surfaceText
+                    cornerRadius: root.outerR
                     anchors.fill: parent
                 }
             }

@@ -77,6 +77,11 @@ PluginComponent {
     property var rawContributions: []
     property var rawGridData: []  // 53 weeks of data for calendar grid
 
+    // Popout calendar grid dimensions and Theme tokens
+    readonly property real popoutCellSize: Theme.spacingL + Theme.spacingS + Theme.spacingXXS // 26
+    readonly property real popoutCellSpacing: Theme.spacingXS // 4
+    readonly property real popoutCellRadius: Theme.spacingXS // 4
+
     // Classic GitHub-style palette (used when followThemeColor is false).
     readonly property var classicPalette: ["#202329", "#0e4429", "#006d32", "#26a641", "#39d353"]
 
@@ -450,123 +455,67 @@ if [ "$http_code" != "200" ]; then
     exit 1
 fi
 
-# 4. Process Data
-# We use jq to filter relevant days (>= start_date)
-relevant_days=$(echo "$body" | jq -c --arg start "$start_date" '.contributions[] | select(.date >= $start)')
+# 4. Process Data in a single jq invocation (avoids spawning jq and date hundreds of times)
+echo "$body" | jq -c \
+  --arg start "$start_date" \
+  --arg today "$today" \
+  --arg start_day "$START_DAY" \
+  --arg c0 "$COLOR_0" --arg c1 "$COLOR_1" --arg c2 "$COLOR_2" --arg c3 "$COLOR_3" --arg c4 "$COLOR_4" '
+  def month_name: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][. - 1];
+  def pad2: if . < 10 then "0" + tostring else tostring end;
+  def format_date(d):
+    (d | split("-") | map(tonumber)) as $p
+    | [($p[2] | pad2), ($p[1] | month_name), ($p[0] % 100 | pad2)] | join(" / ");
+  def tooltip_date(d; c):
+    (d | split("-") | map(tonumber)) as $p
+    | ([($p[2] | pad2), ($p[1] | month_name)] | join(" / ")) + " :: " + (c | tostring);
+  def dow(d):
+    (d | split("-") | map(tonumber)) as $p
+    | $p[0] as $y | $p[1] as $m | $p[2] as $day
+    | (if $m < 3 then ($y - 1) else $y end) as $adj_y
+    | [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4][$m - 1] as $t
+    | ($adj_y + ($adj_y/4|floor) - ($adj_y/100|floor) + ($adj_y/400|floor) + $t + $day) % 7;
+  def color_map(lvl):
+    if lvl == 1 then $c1
+    elif lvl == 2 then $c2
+    elif lvl == 3 then $c3
+    elif lvl == 4 then $c4
+    else $c0 end;
 
-total_contributions=0
-all_days=()
-
-# Read filtered JSON lines
-while read -r day_json; do
-    if [ -z "$day_json" ]; then continue; fi
-    
-    date=$(echo "$day_json" | jq -r '.date')
-    count=$(echo "$day_json" | jq -r '.count')
-    level=$(echo "$day_json" | jq -r '.level')
-    
-    day_timestamp=$(date -d "$date" +%s)
-    
-    if [ "$day_timestamp" -le "$today_timestamp" ]; then
-        
-        case "$level" in
-            0) color="$COLOR_0" ;;
-            1) color="$COLOR_1" ;;
-            2) color="$COLOR_2" ;;
-            3) color="$COLOR_3" ;;
-            4) color="$COLOR_4" ;;
-            *) color="$COLOR_0" ;;
-        esac
-
-        total_contributions=$((total_contributions + count))
-
-        if [ "$START_DAY" = "Monday" ]; then
-            weekday=$(( $(date -d "$date" +%u) - 1 ))
-            weekday_names=("Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun")
-        else
-            weekday=$(date -d "$date" +%w)
-            weekday_names=("Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat")
-        fi
-
-        formatted_date=$(date -d "$date" "+%d / %b / %y")
-        tooltip_text=$(date -d "$date" "+%d / %b :: $count")
-        
-        # Fix: Escape \${} to prevent JS interpolation
-        weekday_name="\${weekday_names[$weekday]}"
-
-        all_days+=("$date|$weekday|$count|$color|$formatted_date|$weekday_name|$tooltip_text|$level")
-    fi
-done <<< "$relevant_days"
-
-# 5. Build Grid
-# Fix: Escape \${} to prevent JS interpolation
-IFS=$'\\n' sorted_days=($(sort <<<"\${all_days[*]}"))
-unset IFS
-
-grid_json="["
-current_week="["
-current_week_day=-1
-first_week=1
-first_day_in_week=1
-
-# Fix: Escape \${} to prevent JS interpolation
-for day_data in "\${sorted_days[@]}"; do
-    IFS='|' read -r date weekday count color formatted_date weekday_name tooltip_text level <<< "$day_data"
-    
-    if [ "$weekday" == "0" ] && [ "$first_day_in_week" == "0" ]; then
-        current_week="$current_week]"
-        if [ "$first_week" == "1" ]; then
-            grid_json="$grid_json$current_week"
-            first_week=0
-        else
-            grid_json="$grid_json,$current_week"
-        fi
-        current_week="["
-        first_day_in_week=1
-    fi
-
-    day_obj="{\\\"weekday\\\":$weekday,\\\"weekdayName\\\":\\\"$weekday_name\\\",\\\"date\\\":\\\"$formatted_date\\\",\\\"count\\\":$count,\\\"color\\\":\\\"$color\\\",\\\"level\\\":$level,\\\"tooltipText\\\":\\\"$tooltip_text\\\"}"
-
-    if [ "$first_day_in_week" == "1" ]; then
-        current_week="$current_week$day_obj"
-        first_day_in_week=0
-    else
-        current_week="$current_week,$day_obj"
-    fi
-done
-
-current_week="$current_week]"
-if [ "$first_week" == "1" ]; then
-    grid_json="$grid_json$current_week"
-else
-    grid_json="$grid_json,$current_week"
-fi
-grid_json="$grid_json]"
-
-# 6. Build Pill Data
-# Fix: Escape \${} to prevent JS interpolation
-day_count=\${#sorted_days[@]}
-pill_start=$((day_count - 7))
-if [ $pill_start -lt 0 ]; then pill_start=0; fi
-
-pill_json="["
-pill_count=0
-
-for (( i=pill_start; i<day_count; i++ )); do
-    # Fix: Escape \${} to prevent JS interpolation
-    day_data="\${sorted_days[$i]}"
-    IFS='|' read -r date weekday count color formatted_date weekday_name tooltip_text level <<< "$day_data"
-
-    if [ $pill_count -gt 0 ]; then
-        pill_json="$pill_json,"
-    fi
-    pill_json="$pill_json{\\\"weekday\\\":\\\"$weekday_name\\\",\\\"date\\\":\\\"$formatted_date\\\",\\\"count\\\":$count,\\\"color\\\":\\\"$color\\\",\\\"level\\\":$level,\\\"tooltipText\\\":\\\"$tooltip_text\\\"}"
-    pill_count=$((pill_count + 1))
-done
-pill_json="$pill_json]"
-
-printf '{"contributions":%s,"gridData":%s,"total":%d,"error":false}\\n' "$pill_json" "$grid_json" "$total_contributions"
-exit 0
+  [ .contributions[] | select(.date >= $start and .date <= $today) ] | sort_by(.date) as $filtered
+  | ($filtered | map(.count) | add // 0) as $total
+  | [
+      $filtered[] | . as $item
+      | dow($item.date) as $d
+      | (if $start_day == "Monday" then ($d + 6) % 7 else $d end) as $weekday
+      | (if $start_day == "Monday" then ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"] else ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"] end)[$weekday] as $wname
+      | {
+          weekday: $weekday,
+          weekdayName: $wname,
+          date: format_date($item.date),
+          count: $item.count,
+          color: color_map($item.level),
+          level: $item.level,
+          tooltipText: tooltip_date($item.date; $item.count)
+        }
+    ] as $all_days
+  | reduce $all_days[] as $d (
+      { weeks: [], cur: [] };
+      if $d.weekday == 0 and (.cur | length) > 0 then
+        .weeks += [.cur] | .cur = [$d]
+      else
+        .cur += [$d]
+      end
+    ) as $grid_acc
+  | ($grid_acc.weeks + (if ($grid_acc.cur | length) > 0 then [$grid_acc.cur] else [] end)) as $gridData
+  | ($all_days | if length >= 7 then .[-7:] else . end) as $pillData
+  | {
+      contributions: $pillData,
+      gridData: $gridData,
+      total: $total,
+      error: false
+    }
+'
 `
     }
 
@@ -856,7 +805,7 @@ exit 0
                         StyledText {
                             text: root.faGithubGlyph
                             font.family: root.faFamily
-                            font.pixelSize: 22
+                            font.pixelSize: Theme.fontSizeXLarge
                             color: Theme.primary
                             anchors.centerIn: parent
                             scale: profileArea.containsMouse ? 1.2 : 1.0
@@ -866,7 +815,7 @@ exit 0
                         DankRipple {
                             id: profileRipple
                             rippleColor: Theme.surfaceText
-                            cornerRadius: 21
+                            cornerRadius: width / 2
                             anchors.fill: parent
                         }
                     }
@@ -1070,16 +1019,16 @@ exit 0
                         // 1) VERTICAL DAY LABELS (For Month, 2 Month, Year)
                         Column {
                             visible: root.displayMode !== "Week" && !root.hideDaysInitials
-                            spacing: 4
-                            topPadding: 4
+                            spacing: root.popoutCellSpacing
+                            topPadding: root.popoutCellSpacing
                             Repeater {
                                 model: root.startDay === "Monday" ? ["M", "T", "W", "T", "F", "S", "S"] : ["S", "M", "T", "W", "T", "F", "S"]
                                 StyledText {
                                     text: modelData
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fontSizeSmall - 2
                                     color: Theme.surfaceVariantText
                                     width: 14
-                                    height: 26
+                                    height: root.popoutCellSize
                                     horizontalAlignment: Text.AlignRight
                                     verticalAlignment: Text.AlignVCenter
                                 }
@@ -1089,7 +1038,7 @@ exit 0
                         // 2) GRID for Month, 2 Month, Year
                         Row {
                             visible: root.displayMode !== "Week"
-                            spacing: root.displayMode === "Month" ? 16 : 4
+                            spacing: root.displayMode === "Month" ? Theme.spacingL : root.popoutCellSpacing
                             Repeater {
                                 model: {
                                     if (root.displayMode === "Month") return root.gridData.slice(-5)
@@ -1098,14 +1047,14 @@ exit 0
                                     return []
                                 }
                                 Column {
-                                    spacing: 4
+                                    spacing: root.popoutCellSpacing
                                     required property var modelData
                                     Repeater {
                                         model: modelData
                                         Rectangle {
-                                            width: 26
-                                            height: 26
-                                            radius: root.selectedDay === modelData ? (width/2) : 4
+                                            width: root.popoutCellSize
+                                            height: root.popoutCellSize
+                                            radius: root.selectedDay === modelData ? (width / 2) : root.popoutCellRadius
                                             Behavior on radius { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
                                             color: modelData.color || root.levelToColor(0)
                                             border.color: root.selectedDay === modelData ? Theme.primary : Theme.withAlpha(Theme.outline, 0.3)
@@ -1129,7 +1078,7 @@ exit 0
                         // 3) HORIZONTAL WEEK for "Week"
                         Row {
                             visible: root.displayMode === "Week"
-                            spacing: 12
+                            spacing: Theme.spacingM
                             Repeater {
                                 model: {
                                     if (root.displayMode === "Week" && root.gridData.length > 0) {
@@ -1138,22 +1087,22 @@ exit 0
                                     return []
                                 }
                                 Column {
-                                    spacing: 8
+                                    spacing: Theme.spacingS
                                     required property var modelData
                                     
                                     StyledText {
                                         visible: !root.hideDaysInitials
                                         text: modelData.weekdayName ? modelData.weekdayName.charAt(0) : ""
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fontSizeSmall - 2
                                         color: Theme.surfaceVariantText
-                                        width: 26
+                                        width: root.popoutCellSize
                                         horizontalAlignment: Text.AlignHCenter
                                     }
 
                                     Rectangle {
-                                        width: 26
-                                        height: 26
-                                        radius: root.selectedDay === modelData ? 13 : 4
+                                        width: root.popoutCellSize
+                                        height: root.popoutCellSize
+                                        radius: root.selectedDay === modelData ? (width / 2) : root.popoutCellRadius
                                         Behavior on radius { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
                                         color: modelData.color || root.levelToColor(0)
                                         border.color: root.selectedDay === modelData ? Theme.primary : Theme.withAlpha(Theme.outline, 0.3)
@@ -1200,7 +1149,7 @@ exit 0
 
                             StyledText {
                                 text: root.selectedDay ? root.selectedDay.count : "0"
-                                font.pixelSize: 32
+                                font.pixelSize: Theme.fontSizeXLarge * 1.6
                                 font.bold: true
                                 color: Theme.surfaceText
                                 anchors.horizontalCenter: parent.horizontalCenter
@@ -1208,7 +1157,7 @@ exit 0
 
                             StyledText {
                                 text: "contributions"
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fontSizeSmall - 2
                                 color: Theme.surfaceVariantText
                                 anchors.horizontalCenter: parent.horizontalCenter
                             }

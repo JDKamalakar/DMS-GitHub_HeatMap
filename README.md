@@ -60,9 +60,12 @@ Built with ❤️ for the [Dank Material Shell](https://github.com/DankMaterialS
     <img src="https://contrib.rocks/image?repo=JDKamalakar/DMS-GitHub_HeatMap" alt="GitHub HeatMap contributors" title="GitHub HeatMap contributors" width="100"/>
 </a>
 
-### Disclaimer
+### Disclaimer & Privacy
 
 This application is an independent utility for Dank Material Shell.
+
+> [!NOTE]
+> **Data Disclosure:** Contribution data is fetched via the public API hosted at [`github-contributions-api.jogruber.de`](https://github-contributions-api.jogruber.de/) (`https://github-contributions-api.jogruber.de/v4/<username>`) rather than directly from GitHub's GraphQL/REST APIs, allowing tokenless public contribution graph access.
 
 ### 📜 License
 

@@ -3,7 +3,7 @@
   "name": "GitHub Heatmap Revive",
   "description": "Display GitHub contribution heatmap with color-coded activity levels",
   "category": "utilities",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "JDKamalakar",
   "icon": "code",
   "type": "composite",
@@ -23,7 +23,14 @@
   "distro": [
     "any"
   ],
-  "dependencies": [],
+  "dependencies": [
+    "bash",
+    "curl",
+    "jq",
+    "coreutils",
+    "libnotify",
+    "xdg-utils"
+  ],
   "screenshot": "https://raw.githubusercontent.com/JDKamalakar/DMS-GitHub_HeatMap/refs/heads/main/assets/POP_Up-UI.png",
   "permissions": [
     "settings_read",
