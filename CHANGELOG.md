@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.0] - 2026-11-13
+
+### feat:
+- **Native Wayland Compositor Blur**: Added default background blur for `DesktopWidget.qml` using Quickshell's `WindowBlur` bound directly to `QsWindow.window`, natively passing rounded corner masks via the `ext-background-effect-v1` protocol without requiring manual compositor rules.
+- **Required Packages Diagnostics**: Added an expandable "Required packages" section in `HeatMapSettings.qml` (matching `DMS-ScreenCapture_Toolbar`) with live status badges detecting `bash`, `curl`, `jq`, `coreutils (date)`, `libnotify (notify-send)`, and `xdg-utils (xdg-open)`.
+
+### fix:
+- **ToastService Notification Crash**: Fixed an invocation error in settings by migrating deprecated/missing `ToastService.showSuccess` call to `ToastService.showInfo`.
+- **DesktopWidget Window Target**: Fixed blur attaching to `ProxiedWindow` by resolving `root.QsWindow.window` (`WaylandPanelInterface`), allowing proper protocol registration in Wayland compositors like Niri.
+
+---
+
 ## [2.1.0] - 2026-10-11
 
 ### Added
