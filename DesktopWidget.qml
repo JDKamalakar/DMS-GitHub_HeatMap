@@ -1,6 +1,9 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
+import Quickshell.Wayland
 import qs.Common
+import qs.Services
 import qs.Widgets
 import qs.Modules.Plugins
 
@@ -92,7 +95,9 @@ DesktopPluginComponent {
         }
     }
 
-    Component.onCompleted: refreshAll()
+    Component.onCompleted: {
+        refreshAll();
+    }
 
     // Self-healing retry in case the first refreshAll() above hit SettingsData
     // before it had finished loading.
@@ -200,6 +205,18 @@ DesktopPluginComponent {
             }
         }
         return total;
+    }
+
+    WindowBlur {
+        id: widgetBlur
+        targetWindow: root.QsWindow ? root.QsWindow.window : null
+        blurEnabled: true
+        surfaceColor: "transparent"
+        blurX: mainContainer.x
+        blurY: mainContainer.y
+        blurWidth: mainContainer.width
+        blurHeight: mainContainer.height
+        blurRadius: mainContainer.radius
     }
 
     Rectangle {

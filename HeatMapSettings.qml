@@ -1,9 +1,12 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
 import qs.Common
 import qs.Widgets
 import qs.Modules.Plugins
+import qs.Modules.Settings.Widgets
 import qs.Services
 
 PluginSettings {
@@ -211,6 +214,7 @@ PluginSettings {
         if (desktopFollowThemeToggle) {
             desktopFollowThemeToggle.checked = savedDesktopFollowThemeBool
         }
+
     }
 
     Component.onCompleted: {
@@ -1483,6 +1487,7 @@ PluginSettings {
                             }
                         }
                     }
+
                 }
             }
         }
@@ -1568,7 +1573,7 @@ PluginSettings {
                             root.savedHideDays = hideDays
                         }
 
-                        ToastService.showSuccess("Settings saved successfully")
+                        ToastService.showInfo("Settings saved successfully")
                         root.refreshProperties()
                     }
                 }
@@ -1622,6 +1627,208 @@ PluginSettings {
                     rippleColor: root.hasPendingChanges ? Theme.withAlpha(Theme.primaryText, 0.3) : Theme.surfaceText
                     cornerRadius: root.outerR
                     anchors.fill: parent
+                }
+            }
+        }
+
+        // =====================================================================
+        // 4. REQUIRED PACKAGES
+        // =====================================================================
+        Item {
+            id: depsWrapper
+            width: parent.width
+            implicitHeight: depsCol.implicitHeight
+            visible: !root.isInstanceSettings
+
+            property bool expanded: false
+            property var depStatus: ({
+                "bash": true,
+                "curl": true,
+                "jq": true,
+                "date": true,
+                "notify-send": true,
+                "xdg-open": true
+            })
+            property bool isChecking: true
+
+            Process {
+                id: depChecker
+                command: [
+                    "bash", "-c",
+                    "python3 -c \"import json, shutil, sys\n" +
+                    "cmds = [\n" +
+                    "  ('bash', 'bash'),\n" +
+                    "  ('curl', 'curl'),\n" +
+                    "  ('jq', 'jq'),\n" +
+                    "  ('date', 'date'),\n" +
+                    "  ('notify-send', 'notify-send'),\n" +
+                    "  ('xdg-open', 'xdg-open')\n" +
+                    "]\n" +
+                    "results = {k: bool(shutil.which(cmd)) for k, cmd in cmds}\n" +
+                    "sys.stdout.write(json.dumps(results))\n\""
+                ]
+                stdout: StdioCollector {
+                    onStreamFinished: {
+                        depsWrapper.isChecking = false;
+                        try {
+                            if (text && text.trim() !== "") {
+                                depsWrapper.depStatus = JSON.parse(text.trim());
+                            }
+                        } catch (e) {
+                            console.warn("Failed to parse dependency status:", e);
+                        }
+                    }
+                }
+            }
+
+            Component.onCompleted: {
+                depChecker.running = true;
+            }
+
+            Column {
+                id: depsCol
+                width: parent.width
+                spacing: 0
+
+                Item {
+                    id: depsHeaderRow
+                    width: parent.width
+                    height: 40
+
+                    Row {
+                        anchors.left: parent.left
+                        anchors.leftMargin: Theme.spacingM
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: Theme.spacingXS
+
+                        DankIcon {
+                            name: "extension"
+                            size: 16
+                            color: Theme.primary
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        StyledText {
+                            text: I18n.tr("Required packages")
+                            font.pixelSize: Theme.fontSizeSmall
+                            font.weight: Font.DemiBold
+                            color: Theme.primary
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    DankIcon {
+                        anchors.right: parent.right
+                        anchors.rightMargin: Theme.spacingM
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "expand_more"
+                        size: Theme.iconSize || 20
+                        color: Theme.surfaceVariantText
+                        rotation: depsWrapper.expanded ? 180 : 0
+
+                        Behavior on rotation {
+                            NumberAnimation {
+                                duration: 200
+                                easing.type: Easing.OutCubic
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            depsWrapper.expanded = !depsWrapper.expanded;
+                            if (depsWrapper.expanded) {
+                                depsWrapper.isChecking = true;
+                                depChecker.running = true;
+                            }
+                        }
+                    }
+                }
+
+                Item {
+                    id: animHost
+                    width: parent.width
+                    clip: true
+                    height: depsWrapper.expanded ? groupContent.implicitHeight : 0
+                    opacity: depsWrapper.expanded ? 1.0 : 0.0
+                    visible: height > 0 || depsWrapper.expanded
+
+                    Behavior on height {
+                        NumberAnimation {
+                            duration: 250
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: 200
+                            easing.type: Easing.OutQuad
+                        }
+                    }
+
+                    SettingsGroup {
+                        id: groupContent
+                        width: parent.width
+
+                        SettingsRow {
+                            visible: depsWrapper.isChecking
+                            iconName: "hourglass_top"
+                            title: I18n.tr("Checking packages...")
+                        }
+
+                        Repeater {
+                            model: [
+                                {
+                                    id: "bash",
+                                    pkg: "bash",
+                                    features: "Executing background data fetch pipeline and script commands",
+                                    present: Boolean(depsWrapper.depStatus["bash"])
+                                },
+                                {
+                                    id: "curl",
+                                    pkg: "curl",
+                                    features: "Retrieving contribution data from public GitHub activity API",
+                                    present: Boolean(depsWrapper.depStatus["curl"])
+                                },
+                                {
+                                    id: "jq",
+                                    pkg: "jq",
+                                    features: "High-performance JSON transformation and calendar grid processing",
+                                    present: Boolean(depsWrapper.depStatus["jq"])
+                                },
+                                {
+                                    id: "date",
+                                    pkg: "coreutils (date)",
+                                    features: "Computing calendar timestamps, year ranges, and day-of-week offsets",
+                                    present: Boolean(depsWrapper.depStatus["date"])
+                                },
+                                {
+                                    id: "notify-send",
+                                    pkg: "libnotify (notify-send)",
+                                    features: "Desktop notifications for contribution updates and API sync alerts",
+                                    present: Boolean(depsWrapper.depStatus["notify-send"])
+                                },
+                                {
+                                    id: "xdg-open",
+                                    pkg: "xdg-utils (xdg-open)",
+                                    features: "Launching default browser to open GitHub user profiles directly",
+                                    present: Boolean(depsWrapper.depStatus["xdg-open"])
+                                }
+                            ]
+
+                            delegate: SettingsRow {
+                                iconName: modelData.present ? "check_circle" : "error"
+                                iconColor: modelData.present ? Theme.success : Theme.error
+                                title: modelData.pkg
+                                subtitle: I18n.tr("Used for: %1").arg(modelData.features)
+                                trailingBadge: modelData.present ? I18n.tr("Installed") : I18n.tr("Missing")
+                                trailingBadgeColor: modelData.present ? Theme.surfaceVariantText : Theme.error
+                            }
+                        }
+                    }
                 }
             }
         }
